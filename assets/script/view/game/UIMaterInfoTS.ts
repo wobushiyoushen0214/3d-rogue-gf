@@ -23,6 +23,9 @@ export class UIMaterInfoTS extends Component {
     @property(ProgressBar)
     ExpProgressBar: ProgressBar = null;
 
+    @property(Label)
+    levelLabel: Label = null;
+
     private bindedPlayer: Node = null;
     private enemyTags: Map<string, Node> = new Map();
     private coreTags: Map<string, Node> = new Map();
@@ -44,6 +47,12 @@ export class UIMaterInfoTS extends Component {
     start() {
         if (!this.hpProgressBar){
             this.hpProgressBar = this.node.getChildByName("hp_bg").getComponent(ProgressBar);
+        }
+        if (!this.levelLabel){
+            const levelNode = this.node.getChildByName("levelLabel");
+            if (levelNode){
+                this.levelLabel = levelNode.getComponent(Label) ?? levelNode.addComponent(Label);
+            }
         }
         this.uiCamera = find("UIRoot/Camera").getComponent(Camera);
         this.masterCamera = find("Main Camera").getComponent(Camera);
@@ -112,6 +121,11 @@ export class UIMaterInfoTS extends Component {
         }
         this.bindedPlayer = player;
         player.on(OnOrEmitConst.OnExpGain, this.onExpGain, this);
+        const playerTs = player.getComponent(PlayerTs);
+        if (playerTs){
+            const snapshot = playerTs.getExpSnapshot();
+            this.onExpGain(snapshot.exp, snapshot.maxExp, snapshot.level);
+        }
     }
 
     private unbindPlayerEvents(){
@@ -122,12 +136,14 @@ export class UIMaterInfoTS extends Component {
         this.bindedPlayer = null;
     }
 
-    private onExpGain(exp: number, maxExp: number){
-        if (!this.ExpProgressBar || maxExp <= 0){
-            return;
+    private onExpGain(exp: number, maxExp: number, level: number = 1){
+        if (this.ExpProgressBar && maxExp > 0){
+            const progress = exp / maxExp;
+            this.ExpProgressBar.progress = progress < 0 ? 0 : (progress > 1 ? 1 : progress);
         }
-        const progress = exp / maxExp;
-        this.ExpProgressBar.progress = progress < 0 ? 0 : (progress > 1 ? 1 : progress);
+        if (this.levelLabel){
+            this.levelLabel.string = `Lv.${Math.max(1, Math.floor(level ?? 1))}`;
+        }
     }
 
     private updateEnemyTags(){
@@ -149,7 +165,7 @@ export class UIMaterInfoTS extends Component {
             if (!monster){
                 continue;
             }
-            if (monster.isElite){
+            if (monster.isBoss || monster.isElite){
                 this.renderMonsterTag(goalId, monster, activeIds);
                 continue;
             }

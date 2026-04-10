@@ -275,7 +275,7 @@ export class PlayerTs extends Component {
        this.projectilePenetration = 1;
        this.setProjectileCount(1);
        director.getScene().emit(OnOrEmitConst.OnPlayerhurt, 1);
-       this.node.emit(OnOrEmitConst.OnExpGain, this.actor.rungameInfo.exp, this.actor.rungameInfo.maxExp, this);
+       this.node.emit(OnOrEmitConst.OnExpGain, this.actor.rungameInfo.exp, this.actor.rungameInfo.maxExp, this.actor.rungameInfo.level, this);
 
         return this.actor.rungameInfo;
     }
@@ -339,6 +339,14 @@ export class PlayerTs extends Component {
         return `lv=${info.level}, hp=${info.Hp.toFixed(0)}/${info.maxHp.toFixed(0)}, atk=${info.attack.toFixed(0)}, interval=${info.attackInterval.toFixed(2)}, move=${info.moveSpeed.toFixed(1)}, projectile=${info.projectileCount}, pen=${this.projectilePenetration}, trace=${this.projectileTraceEnabled ? "on" : "off"}, kill=${this.playerDoKill}, elite=${this.eliteKillCount}, core=${this.eliteDrops.length}`;
     }
 
+    getExpSnapshot(){
+        return {
+            exp: this.actor?.rungameInfo?.exp ?? 0,
+            maxExp: this.actor?.rungameInfo?.maxExp ?? 1,
+            level: this.actor?.rungameInfo?.level ?? 1,
+        };
+    }
+
     applyLevelConfig(config: LevelConfigVo | null){
         if (!config){
             return;
@@ -396,7 +404,7 @@ export class PlayerTs extends Component {
             this.node.emit(OnOrEmitConst.OnplayerUpgrade, property.level, this);
         }
         // 广播获得经验给UI系统
-        this.node.emit(OnOrEmitConst.OnExpGain, property.exp, property.maxExp, this);
+        this.node.emit(OnOrEmitConst.OnExpGain, property.exp, property.maxExp, property.level, this);
     }
 
     private spawnEliteCoreDrop(worldPosition: Vec3){

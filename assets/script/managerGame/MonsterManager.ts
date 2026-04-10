@@ -67,6 +67,11 @@ export class MonsterManager {
         this.enemyNodeNames = normalNames.length > 0 ? normalNames.slice() : (this.bossNodeName ? [this.bossNodeName] : []);
         const preUrl = Array.from(uniqueLoadNames).map((name)=> "prefab/monster/" + name);
 
+        if (preUrl.length <= 0){
+            onComplet();
+            return;
+        }
+
         resources.load(preUrl, Prefab, (err:Error, prefabs:Prefab[])=>{
             if (err){
                 throw err;

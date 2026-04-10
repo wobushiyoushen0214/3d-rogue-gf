@@ -42,7 +42,7 @@ export class LevelConfig  extends Component {
             "BossAbility": [],
             "EnemyBonus": 1,
             "Vision": 0,
-            "BossShowTIme": 300,
+            "BossShowTIme": 180,
             "SpawnInterval": 10,
             "SpawnCount": 10,
             "MaxAlive": 100,
