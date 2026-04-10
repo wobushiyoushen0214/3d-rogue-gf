@@ -8,6 +8,7 @@ import { ProjectileManager } from './ProjectileManager';
 import { Actor } from './Actor';
 import { ColliderGroup } from '../const/ColliderGroup';
 import { EffectManager } from './EffectManager';
+import type { PlayerTs } from '../view/game/PlayerTs';
 
 const { ccclass, property } = _decorator;
 
@@ -74,6 +75,9 @@ export class Monster extends Component {
     // Boss 标记
     isBoss: boolean = false;
 
+    // 运行时移速倍率（Boss 事件临时效果）
+    runtimeMoveSpeedScale: number = 1;
+
     private readonly restoreMaterialState = () => {
         for (let i = 0; i < this.messhNodes.length; i++){
             let messh = this.messhNodes[i].getComponent(MeshRenderer);
@@ -95,6 +99,7 @@ export class Monster extends Component {
         // TODO
         this.isBoss = isBoss;
         this.isElite = !isBoss && (hpMultiplier > 1.01 || attackMultiplier > 1.01 || moveSpeedMultiplier > 1.01);
+        this.runtimeMoveSpeedScale = 1;
         this.rungameInfo.moveSpeed = 3 * moveSpeedMultiplier;
         this.rungameInfo.Hp = 30 * (1+baseHP) * hpMultiplier;
         this.rungameInfo.maxHp = this.rungameInfo.Hp;
@@ -226,12 +231,16 @@ export class Monster extends Component {
         if (event.otherCollider.getGroup() == ColliderGroup.protagonistBullet){
             // 被普通攻击击中
             const projectile = event.otherCollider.getComponent(ProjectileManager);
-            if (projectile == undefined){
+            if (projectile == undefined || !projectile.host || !projectile.host.isValid){
                 return;
             }
+            const playerTs = projectile.host.getComponent('PlayerTs') as PlayerTs | null;
             let hostActor = projectile.host.getComponent(Actor);
             if (hostActor != undefined){
                 attack = hostActor.rungameInfo.attack;
+                if (playerTs){
+                    attack = playerTs.adjustOutgoingDamage(attack, this, projectile);
+                }
             }else {
                 let monster =  projectile.host.getComponent(Monster);
                 if (monster != undefined){
@@ -248,12 +257,17 @@ export class Monster extends Component {
         if (attack == null || attack == undefined){
             return;
         }
-        
+
         // 受击方向
         let hurtDiretion = v3();
         Vec3.subtract(hurtDiretion, this.node.worldPosition, attackNodePostion);
         hurtDiretion.normalize();
         this.hurt(attack, hurtDiretion, masterNode);
+        const playerTs = masterNode?.isValid ? masterNode.getComponent('PlayerTs') as PlayerTs | null : null;
+        if (playerTs && event.otherCollider.getGroup() == ColliderGroup.protagonistBullet){
+            const projectile = event.otherCollider.getComponent(ProjectileManager);
+            playerTs.onProjectileHitMonster(this, attack, projectile);
+        }
     }
 
     // 角色受伤
@@ -272,10 +286,11 @@ export class Monster extends Component {
         this.rungameInfo.Hp = this.rungameInfo.Hp - damage;
         this.node.emit(OnOrEmitConst.Onhurt, damage);
         if(this.rungameInfo.Hp <= 0){
+            const deathPos = v3(this.node.worldPosition.x, this.node.worldPosition.y, this.node.worldPosition.z);
             this.onDie();
             const expReward = this.isBoss ? 25 : (this.isElite ? 8 : 1);
             if (hurtSrc){
-                hurtSrc.emit(OnOrEmitConst.OnKill, this.node, expReward, this.isElite, this.isBoss);
+                hurtSrc.emit(OnOrEmitConst.OnKill, this.node, expReward, this.isElite, this.isBoss, deathPos);
             }
         } else {
             this.changeState(ActorState.Hit);

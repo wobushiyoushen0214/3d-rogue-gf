@@ -3,6 +3,7 @@ import { GameStateEnum } from '../../const/GameStateEnum';
 import { GameStateInput } from '../../data/dynamicData/GameStateInput';
 import { LevelConfig } from '../../const/LevelConfig';
 import { OnOrEmitConst } from '../../const/OnOrEmitConst';
+import { EffectConst } from '../../const/EffectConst';
 import { GameMapManager } from '../../managerGame/GameMapManager';
 import { MonsterManager } from '../../managerGame/MonsterManager';
 import { PlayerTs } from './PlayerTs';
@@ -12,50 +13,50 @@ import { Vector2 } from '../../utils/RVO/Common';
 import { Monster } from '../../managerGame/Monster';
 import { PoolManager } from '../../utils/PoolManager';
 const { ccclass, property } = _decorator;
+type PieTrapInfo = {
+    node: Node;
+    expireAt: number;
+    radius: number;
+};
 
 @ccclass('level')
 export class level extends Component {
     @property(Prefab)
     private playerPrefab: Prefab = null;
 
-    //地图刷新间隔
+    //鍦板浘鍒锋柊闂撮殧
     private refashMap: number = 0.0;
 
-    // 怪物血量属性增强
+    // 鎬墿琛€閲忓睘鎬у寮?
     baseHP: number = 1.0;
-    // 怪物伤害属性增强
+    // 鎬墿浼ゅ灞炴€у寮?
     baseAttack: number = 1.0;
 
-    // 一次性生成敌人数量
+    // 涓€娆℃€х敓鎴愭晫浜烘暟閲?
     @property(CCInteger)
     count: number = 10;
 
-    // 最多敌人存活数量
-    @property(CCInteger)
+    // 鏈€澶氭晫浜哄瓨娲绘暟閲?    @property(CCInteger)
     maxAlive: number = 100;
 
-    // 地图刷新间隔
+    // 鍦板浘鍒锋柊闂撮殧
     private mapRefreshInterval: number = 0.5;
 
-    // 刷怪间隔
-    private spawnInterval: number = 10;
+    // 鍒锋€棿闅?    private spawnInterval: number = 10;
 
-    // 刷怪最小半径
-    private spawnRadiusMin: number = 10;
+    // 鍒锋€渶灏忓崐寰?    private spawnRadiusMin: number = 10;
 
-    // 刷怪最大半径
-    private spawnRadiusMax: number = 50;
+    // 鍒锋€渶澶у崐寰?    private spawnRadiusMax: number = 50;
 
-    // 难度成长间隔
+    // 闅惧害鎴愰暱闂撮殧
     private difficultyInterval: number = 30;
 
-    // 难度成长参数
+    // 闅惧害鎴愰暱鍙傛暟
     private hpGrowthPerTick: number = 0.2;
     private attackGrowthPerTick: number = 0.1;
     private spawnCountGrowthPerTick: number = 2;
 
-    // 精英刷怪参数
-    private eliteUnlockTime: number = 60;
+    // 绮捐嫳鍒锋€弬鏁?    private eliteUnlockTime: number = 60;
     private eliteSpawnInterval: number = 45;
     private eliteSpawnCount: number = 1;
     private eliteScaleMin: number = 1.35;
@@ -63,12 +64,15 @@ export class level extends Component {
     private eliteHPMultiplier: number = 2.8;
     private eliteAttackMultiplier: number = 1.6;
     private eliteMoveSpeedMultiplier: number = 1.1;
+    private eliteDisplayName: string = "浠ｇ爜灞庡北";
+    private eliteSplitCountMin: number = 2;
+    private eliteSplitCountMax: number = 3;
 
-    // 战斗进行时长（仅在 Running 累加）
-    private battleElapsed: number = 0;
+    // 鎴樻枟杩涜鏃堕暱锛堜粎鍦?Running 绱姞锛?    private battleElapsed: number = 0;
 
-    // Boss 刷新参数
+    // Boss 鍒锋柊鍙傛暟
     private bossType: string = "";
+    private bossDisplayName: string = "老板的大饼";
     private bossShowTime: number = 300;
     private bossScale: number = 2.3;
     private bossHPMultiplier: number = 7.5;
@@ -78,8 +82,26 @@ export class level extends Component {
     private bossSpawned: boolean = false;
     private bossWarning30Sent: boolean = false;
     private bossWarning10Sent: boolean = false;
+    private bossNode: Node = null;
+    private bossFinalStandTriggered: boolean = false;
+    private bossRushRemain: number = 0;
+    private bossRushDuration: number = 4.2;
+    private bossRushInterval: number = 13;
+    private bossRushSpeedScale: number = 1.35;
+    private bossNextRushTime: number = 0;
+    private bossPieInterval: number = 11;
+    private bossPieDuration: number = 8.5;
+    private bossPieCount: number = 3;
+    private bossPieRadius: number = 1.8;
+    private bossPieDebuffScale: number = 1.4;
+    private bossPieDebuffDuration: number = 3.2;
+    private bossPieSpawnRadiusMin: number = 3.5;
+    private bossPieSpawnRadiusMax: number = 8.5;
+    private bossFinalStandWaveScale: number = 0.6;
+    private bossNextPieTime: number = 0;
+    private bossPieTraps: PieTrapInfo[] = [];
 
-    // 敌人出现的初始位置，避免一直创建暂用内存，重复使用该值
+    // 鏁屼汉鍑虹幇鐨勫垵濮嬩綅缃紝閬垮厤涓€鐩村垱寤烘殏鐢ㄥ唴瀛橈紝閲嶅浣跨敤璇ュ€?
     spawnPos: Vec3 = v3();
 
     start() {
@@ -88,10 +110,10 @@ export class level extends Component {
         MonsterManager.instance.player.active = true;
 
         Simulator.instance.setAgentDefaults(10, 4, 1, 0.1, 0.5, 15, new Vector2(0, 0));
-        // 加载游戏
+        // 鍔犺浇娓告垙
         GameStateInput.setGameState(GameStateEnum.Loading);
-        // 加载地图
-        // 加载特效
+        // 鍔犺浇鍦板浘
+        // 鍔犺浇鐗规晥
         EffectManager.instance.init();
         let level = LevelConfig.getLevel();
         MonsterManager.instance.player.getComponent(PlayerTs)?.applyLevelConfig(level);
@@ -113,37 +135,61 @@ export class level extends Component {
         this.eliteHPMultiplier = level.EliteHPMultiplier ?? this.eliteHPMultiplier;
         this.eliteAttackMultiplier = level.EliteAttackMultiplier ?? this.eliteAttackMultiplier;
         this.eliteMoveSpeedMultiplier = level.EliteMoveSpeedMultiplier ?? this.eliteMoveSpeedMultiplier;
+        this.eliteDisplayName = level.EliteDisplayName ?? this.eliteDisplayName;
         this.bossType = level.BossType ?? this.bossType;
+        this.bossDisplayName = level.BossDisplayName ?? this.bossDisplayName;
         this.bossShowTime = level.BossShowTIme ?? this.bossShowTime;
         this.bossScale = level.BossScale ?? this.bossScale;
         this.bossHPMultiplier = level.BossHPMultiplier ?? this.bossHPMultiplier;
         this.bossAttackMultiplier = level.BossAttackMultiplier ?? this.bossAttackMultiplier;
         this.bossMoveSpeedMultiplier = level.BossMoveSpeedMultiplier ?? this.bossMoveSpeedMultiplier;
         this.bossSpawnRadius = level.BossSpawnRadius ?? this.bossSpawnRadius;
+        this.bossRushInterval = level.BossRushInterval ?? this.bossRushInterval;
+        this.bossRushDuration = level.BossRushDuration ?? this.bossRushDuration;
+        this.bossRushSpeedScale = level.BossRushSpeedScale ?? this.bossRushSpeedScale;
+        this.bossPieInterval = level.BossPieInterval ?? this.bossPieInterval;
+        this.bossPieDuration = level.BossPieDuration ?? this.bossPieDuration;
+        this.bossPieCount = level.BossPieCount ?? this.bossPieCount;
+        this.bossPieRadius = level.BossPieRadius ?? this.bossPieRadius;
+        this.bossPieDebuffScale = level.BossPieDebuffScale ?? this.bossPieDebuffScale;
+        this.bossPieDebuffDuration = level.BossPieDebuffDuration ?? this.bossPieDebuffDuration;
+        this.bossPieSpawnRadiusMin = level.BossPieSpawnRadiusMin ?? this.bossPieSpawnRadiusMin;
+        this.bossPieSpawnRadiusMax = level.BossPieSpawnRadiusMax ?? this.bossPieSpawnRadiusMax;
+        this.bossFinalStandWaveScale = level.BossFinalStandWaveScale ?? this.bossFinalStandWaveScale;
+        if (this.bossPieSpawnRadiusMin > this.bossPieSpawnRadiusMax){
+            const temp = this.bossPieSpawnRadiusMin;
+            this.bossPieSpawnRadiusMin = this.bossPieSpawnRadiusMax;
+            this.bossPieSpawnRadiusMax = temp;
+        }
         this.bossSpawned = false;
         this.bossWarning30Sent = false;
         this.bossWarning10Sent = false;
+        this.bossNode = null;
+        this.bossFinalStandTriggered = false;
+        this.bossRushRemain = 0;
+        this.bossNextRushTime = 0;
+        this.bossNextPieTime = 0;
+        this.clearBossPieTraps();
 
         GameMapManager.instance.init(level.Map, () => {
-            // 加载地图完成之后，加载敌人
-            MonsterManager.instance.init(() =>{
+            MonsterManager.instance.init(() => {
                 this.reflashMaster();
                 GameStateInput.setGameState(GameStateEnum.Ready);
             });
         });
 
 
-        // 2. 关卡逻辑（刷怪，数值向）
-        this.schedule( ()=>{
+        // 关卡逻辑：定时刷怪与数值成长
+        this.schedule(() => {
             if (GameStateInput.canUpdateWorld()){
-                console.log("开始创建敌人22：" + game.totalTime);
+                console.log("开始创建敌人: " + game.totalTime);
 
                 if (MonsterManager.instance.goalvoes.size >= this.maxAlive){
                     return;
                 }
                 this.randomSpawn(this.count, false);
 
-                console.log("创建完成：" + game.totalTime)
+                console.log("创建完成: " + game.totalTime);
             }          
         }, this.spawnInterval, macro.REPEAT_FOREVER, 1.0);
 
@@ -162,34 +208,42 @@ export class level extends Component {
                         spawnCount,
                         MonsterManager.instance.goalvoes.size,
                         Math.floor(this.battleElapsed),
+                        this.eliteDisplayName,
                     );
                 }
             }, this.eliteSpawnInterval, macro.REPEAT_FOREVER, this.eliteUnlockTime);
         }
 
+        director.getScene().on(OnOrEmitConst.OnEliteKilled, this.onEliteKilled, this);
+        director.getScene().on(OnOrEmitConst.OnBossKilled, this.onBossKilled, this);
+
         // 怪物增强计时器
-        this.schedule(()=>{
+        this.schedule(() => {
             this.baseHP += this.hpGrowthPerTick;
             this.baseAttack += this.attackGrowthPerTick;
             this.count += this.spawnCountGrowthPerTick;
         }, this.difficultyInterval, macro.REPEAT_FOREVER, 0);
     }
 
-    // 销毁
+    // 閿€姣?
     onDestroy(){
+        const scene = director.getScene();
+        if (scene && scene.isValid){
+            scene.off(OnOrEmitConst.OnEliteKilled, this.onEliteKilled, this);
+            scene.off(OnOrEmitConst.OnBossKilled, this.onBossKilled, this);
+        }
+        this.clearBossPieTraps();
         MonsterManager.instance.destroy();
         EffectManager.instance.destroy();
         PoolManager.instance.clearAllNodes();
-        // 避障内容清空
+        // 閬块殰鍐呭娓呯┖
         Simulator.instance.clear();
         LevelConfig.startLevel = null;
     }
 
     update(deltaTime: number) {
         if (GameStateInput.isReady()){
-            // 加载游戏则监控是否加载完成
             if (MonsterManager.instance.player != null){
-                // 初始化已经完成
                 MonsterManager.instance.player.getComponent(PlayerTs).runGameInit();
                 GameStateInput.setGameState(GameStateEnum.Running);
             }
@@ -198,27 +252,27 @@ export class level extends Component {
         if (GameStateInput.canUpdateWorld()){
             this.battleElapsed += deltaTime;
             this.updateBossSpawnState();
+            this.updateBossEvent(deltaTime);
             this.refashMap += deltaTime;
             if (this.refashMap > this.mapRefreshInterval){
                 this.refashMap = 0;
                 GameMapManager.instance.flashMap();
             }
-            // 敌人移动
+            // 鏁屼汉绉诲姩
             MonsterManager.instance.setPreferredVelocities(deltaTime);
         }
     }
 
-    // 关卡逻辑 计时器刷怪（刷怪，数值向）
+    // 关卡逻辑：初始化刷怪
     reflashMaster(){
-        // 将怪物放到地图中
         this.randomSpawn(this.count, false);
     }
 
     /**
      * 
-     * @param monsterNum    怪物数量
-     * @param width         地图宽度
-     * @param height        地图长度
+     * @param monsterNum    鎬墿鏁伴噺
+     * @param width         鍦板浘瀹藉害
+     * @param height        鍦板浘闀垮害
      */
      randomSpawn(monsterNum: number = 0, isElite: boolean = false): number{
         let spawnCount = 0;
@@ -230,7 +284,7 @@ export class level extends Component {
             if (MonsterManager.instance.goalvoes.size >= this.maxAlive){
                 break;
             }
-            // TODO 关卡中敌人的生成逻辑 随机位置
+            // TODO 鍏冲崱涓晫浜虹殑鐢熸垚閫昏緫 闅忔満浣嶇疆
             this.spawnPos.y = 0;
             const radius = randomRange(this.spawnRadiusMin, this.spawnRadiusMax);
             const angle = randomRange(0, Math.PI * 2);
@@ -239,14 +293,13 @@ export class level extends Component {
 
             this.spawnPos.x = player.getWorldPosition().x + x;
             this.spawnPos.z = player.getWorldPosition().z + z;
-            // 怪物种类少，使用大小区分
+            // 鎬墿绉嶇被灏戯紝浣跨敤澶у皬鍖哄垎
             const scale = isElite
                 ? randomRange(this.eliteScaleMin, this.eliteScaleMax)
                 : randomRange(1, 1.5);
             let node = MonsterManager.instance.createEnemy(this.spawnPos, scale);
             if (node){
                 let monster = node.getComponent(Monster);
-                // 初始化参数
                 if (monster){
                     if (isElite){
                         monster.monsterInit(
@@ -276,11 +329,11 @@ export class level extends Component {
         const remain = this.bossShowTime - this.battleElapsed;
         if (!this.bossWarning30Sent && remain <= 30 && remain > 10){
             this.bossWarning30Sent = true;
-            director.getScene().emit(OnOrEmitConst.OnBossWarning, Math.ceil(remain));
+            director.getScene().emit(OnOrEmitConst.OnBossWarning, Math.ceil(remain), this.bossDisplayName);
         }
         if (!this.bossWarning10Sent && remain <= 10 && remain > 0){
             this.bossWarning10Sent = true;
-            director.getScene().emit(OnOrEmitConst.OnBossWarning, Math.ceil(remain));
+            director.getScene().emit(OnOrEmitConst.OnBossWarning, Math.ceil(remain), this.bossDisplayName);
         }
         if (remain <= 0){
             this.trySpawnBoss();
@@ -312,13 +365,212 @@ export class level extends Component {
             );
         }
         this.bossSpawned = true;
+        this.bossNode = bossNode;
+        this.bossFinalStandTriggered = false;
+        this.bossRushRemain = 0;
+        this.bossNextRushTime = this.battleElapsed + 5;
+        this.bossNextPieTime = this.battleElapsed + 8;
         director.getScene().emit(
             OnOrEmitConst.OnBossSpawn,
-            this.bossType,
+            this.bossDisplayName,
             Math.floor(this.battleElapsed),
             monster?.rungameInfo?.maxHp ?? 0,
         );
     }
+
+    private onEliteKilled(_eliteKillCount: number, _expReward: number, _lootDesc: string, deathPos: Vec3){
+        if (!deathPos){
+            return;
+        }
+        this.spawnLegacyBugSwarm(deathPos);
+    }
+
+    private spawnLegacyBugSwarm(centerPos: Vec3){
+        const count = Math.max(
+            this.eliteSplitCountMin,
+            Math.floor(randomRange(this.eliteSplitCountMin, this.eliteSplitCountMax + 1)),
+        );
+        for (let i = 0; i < count; i++){
+            if (MonsterManager.instance.goalvoes.size >= this.maxAlive){
+                break;
+            }
+            const radius = randomRange(1.4, 3.2);
+            const angle = randomRange(0, Math.PI * 2);
+            this.spawnPos.set(
+                centerPos.x + Math.cos(angle) * radius,
+                0,
+                centerPos.z + Math.sin(angle) * radius,
+            );
+            const splitNode = MonsterManager.instance.createEnemy(this.spawnPos, randomRange(0.9, 1.15));
+            const splitMonster = splitNode?.getComponent(Monster);
+            if (!splitMonster){
+                continue;
+            }
+            splitMonster.monsterInit(this.baseHP * 0.65, this.baseAttack * 0.65);
+        }
+    }
+
+    private updateBossEvent(deltaTime: number){
+        if (!this.bossSpawned){
+            return;
+        }
+
+        if (!this.bossNode || !this.bossNode.isValid || !this.bossNode.activeInHierarchy){
+            this.applyBossRushScale(1);
+            return;
+        }
+
+        if (this.battleElapsed >= this.bossNextRushTime){
+            this.bossNextRushTime = this.battleElapsed + this.bossRushInterval;
+            this.triggerBossVisionRush();
+        }
+
+        if (this.battleElapsed >= this.bossNextPieTime){
+            this.bossNextPieTime = this.battleElapsed + this.bossPieInterval;
+            this.triggerBossPieTrap();
+        }
+
+        if (!this.bossFinalStandTriggered){
+            const boss = this.bossNode.getComponent(Monster);
+            if (boss && boss.rungameInfo.maxHp > 0){
+                const hpRate = boss.rungameInfo.Hp / boss.rungameInfo.maxHp;
+                if (hpRate <= 0.3){
+                    this.bossFinalStandTriggered = true;
+                    this.triggerBossFinalStand();
+                }
+            }
+        }
+
+        if (this.bossRushRemain > 0){
+            this.bossRushRemain -= deltaTime;
+            if (this.bossRushRemain <= 0){
+                this.bossRushRemain = 0;
+                this.applyBossRushScale(1);
+            } else {
+                this.applyBossRushScale(this.bossRushSpeedScale);
+            }
+        }
+
+        this.updateBossPieTraps();
+    }
+
+    private triggerBossVisionRush(){
+        this.bossRushRemain = this.bossRushDuration;
+        this.applyBossRushScale(this.bossRushSpeedScale);
+        director.getScene().emit(OnOrEmitConst.OnEliteCast, "bossRush", this.bossNode?.worldPosition);
+    }
+
+    private applyBossRushScale(scale: number){
+        const entries = MonsterManager.instance.goalvoes;
+        if (!entries){
+            return;
+        }
+        const fixedScale = Math.max(1, scale);
+        for (const goalId of entries.keys()){
+            const one = entries.get(goalId);
+            const monster = one?.mSphere?.getComponent(Monster);
+            if (!monster){
+                continue;
+            }
+            monster.runtimeMoveSpeedScale = fixedScale;
+        }
+    }
+
+    private triggerBossPieTrap(){
+        const player = MonsterManager.instance.player;
+        if (!player){
+            return;
+        }
+        const pieCount = Math.max(1, Math.floor(this.bossPieCount));
+        for (let i = 0; i < pieCount; i++){
+            const angle = randomRange(0, Math.PI * 2);
+            const radius = randomRange(this.bossPieSpawnRadiusMin, this.bossPieSpawnRadiusMax);
+            const trapNode = new Node("BossPieTrap");
+            trapNode.parent = director.getScene();
+            const expireAt = this.battleElapsed + this.bossPieDuration;
+            const expireGameTime = game.totalTime + this.bossPieDuration;
+            trapNode.setWorldPosition(
+                player.worldPosition.x + Math.cos(angle) * radius,
+                0,
+                player.worldPosition.z + Math.sin(angle) * radius,
+            );
+            (trapNode as any).__pieExpireAt = expireAt;
+            (trapNode as any).__pieExpireGameTime = expireGameTime;
+            (trapNode as any).__pieRadius = this.bossPieRadius;
+            (trapNode as any).__pieCreatedAt = this.battleElapsed;
+            this.bossPieTraps.push({
+                node: trapNode,
+                expireAt: expireAt,
+                radius: this.bossPieRadius,
+            });
+            EffectManager.instance.findEffectNode(EffectConst.EffDie, trapNode.worldPosition);
+        }
+        director.getScene().emit(OnOrEmitConst.OnEliteCast, "pie", player.worldPosition);
+    }
+
+    private updateBossPieTraps(){
+        if (this.bossPieTraps.length <= 0){
+            return;
+        }
+        const player = MonsterManager.instance.player;
+        if (!player || !player.isValid){
+            this.clearBossPieTraps();
+            return;
+        }
+        const playerTs = player.getComponent(PlayerTs);
+        if (!playerTs){
+            return;
+        }
+        for (let i = this.bossPieTraps.length - 1; i >= 0; i--){
+            const trap = this.bossPieTraps[i];
+            if (!trap.node || !trap.node.isValid){
+                this.bossPieTraps.splice(i, 1);
+                continue;
+            }
+            if (this.battleElapsed >= trap.expireAt){
+                EffectManager.instance.findEffectNode(EffectConst.EffDie, trap.node.worldPosition);
+                trap.node.destroy();
+                this.bossPieTraps.splice(i, 1);
+                continue;
+            }
+            const distance = Vec3.distance(trap.node.worldPosition, player.worldPosition);
+            if (distance <= trap.radius){
+                playerTs.applyMaintenanceBurden(this.bossPieDebuffScale, this.bossPieDebuffDuration, "老板的大饼");
+                director.getScene().emit(OnOrEmitConst.OnEliteCast, "pieHit", player.worldPosition);
+                EffectManager.instance.findEffectNode(EffectConst.EffDie, trap.node.worldPosition);
+                trap.node.destroy();
+                this.bossPieTraps.splice(i, 1);
+            }
+        }
+    }
+
+    private triggerBossFinalStand(){
+        const scale = Math.max(0.1, this.bossFinalStandWaveScale);
+        const waveCount = Math.max(6, Math.floor(this.count * scale));
+        this.randomSpawn(waveCount, false);
+        this.scheduleOnce(()=>{
+            if (GameStateInput.canUpdateWorld()){
+                this.randomSpawn(waveCount, false);
+            }
+        }, 1.2);
+        director.getScene().emit(OnOrEmitConst.OnEliteCast, "finalStand", this.bossNode?.worldPosition);
+    }
+
+    private onBossKilled(){
+        this.applyBossRushScale(1);
+        this.clearBossPieTraps();
+        this.bossNode = null;
+    }
+
+    private clearBossPieTraps(){
+        for (const trap of this.bossPieTraps){
+            if (trap.node && trap.node.isValid){
+                trap.node.destroy();
+            }
+        }
+        this.bossPieTraps.length = 0;
+    }
 }
+
 
 

@@ -7,14 +7,20 @@ import { EffectManager } from '../../managerGame/EffectManager';
 import { MonsterManager } from '../../managerGame/MonsterManager';
 import { PlayerTs } from './PlayerTs';
 import { Simulator } from '../../utils/RVO/Simulator';
+import { CareerRoleConfigs, CareerRoleId, CareerSpecializationOrder } from '../../const/CareerConfig';
+import { CareerBranchId, CareerTechTreeConfigs } from '../../const/TechTreeConfig';
 const { ccclass, property } = _decorator;
 type UpgradeOption = {
     title: string;
     desc: string;
     rarity: "common" | "rare";
     weight?: number;
+    roleId?: CareerRoleId;
+    branchId?: CareerBranchId;
+    branchName?: string;
     apply: (player: PlayerTs) => void;
 };
+type UpgradePanelMode = "upgrade" | "specialize";
 
 @ccclass('UIGame')
 export class UIGame extends Component {
@@ -40,14 +46,25 @@ export class UIGame extends Component {
     private upgradeOptionLabels: Label[] = [];
     private currentUpgradeOptions: UpgradeOption[] = [];
     private currentUpgradeLevel = 1;
+    private upgradePanelMode: UpgradePanelMode = "upgrade";
     private upgradeAutoSelectRemain = 0;
-    private upgradeHotkeys = [KeyCode.DIGIT_7, KeyCode.DIGIT_8, KeyCode.DIGIT_9];
+    private upgradeHotkeys = [
+        KeyCode.DIGIT_1,
+        KeyCode.DIGIT_2,
+        KeyCode.DIGIT_3,
+        KeyCode.DIGIT_4,
+        KeyCode.DIGIT_5,
+        KeyCode.DIGIT_6,
+    ];
 
     @property
     showRuntimeDebug: boolean = true;
 
     @property
-    upgradeAutoSelectSeconds: number = 12;
+    upgradeAutoSelectSeconds: number = 0.2;
+
+    @property
+    specializationAutoSelectSeconds: number = 6;
 
     start() {
         this.btnSetting = this.node.getChildByPath("BtnSetting");
@@ -60,6 +77,7 @@ export class UIGame extends Component {
         director.getScene().on(OnOrEmitConst.OnBossWarning, this.onBossWarning, this);
         director.getScene().on(OnOrEmitConst.OnBossSpawn, this.onBossSpawn, this);
         director.getScene().on(OnOrEmitConst.OnBossKilled, this.onBossKilled, this);
+        director.getScene().on(OnOrEmitConst.OnCareerChanged, this.onCareerChanged, this);
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         this.bindOptionalDebugButtons();
         this.initRuntimeDebugHud();
@@ -76,6 +94,7 @@ export class UIGame extends Component {
         this.safeNodeOff(scene, OnOrEmitConst.OnBossWarning, this.onBossWarning);
         this.safeNodeOff(scene, OnOrEmitConst.OnBossSpawn, this.onBossSpawn);
         this.safeNodeOff(scene, OnOrEmitConst.OnBossKilled, this.onBossKilled);
+        this.safeNodeOff(scene, OnOrEmitConst.OnCareerChanged, this.onCareerChanged);
         input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         this.unbindPlayerEvents();
         for (const binding of this.dynamicButtonBindings){
@@ -88,10 +107,18 @@ export class UIGame extends Component {
         this.ensurePlayerEventBinding();
 
         if (GameStateInput.isSelectingUpgrade()){
-            this.upgradeAutoSelectRemain -= deltaTime;
-            if (this.upgradeAutoSelectRemain <= 0){
-                this.showRuntimeNotify("升级选择超时，已自动选择第一项", 1.6);
-                this.applyUpgradeOption(0);
+            if (this.upgradeAutoSelectRemain > 0){
+                this.upgradeAutoSelectRemain -= deltaTime;
+                if (this.upgradeAutoSelectRemain <= 0){
+                    this.upgradeAutoSelectRemain = 0;
+                    this.showRuntimeNotify(
+                        this.upgradePanelMode === "specialize"
+                            ? "专职选择超时，已默认选择第一项"
+                            : "升级选择超时，已自动选择第一项",
+                        1.6,
+                    );
+                    this.applyUpgradeOption(0);
+                }
             }
         }
 
@@ -220,7 +247,7 @@ export class UIGame extends Component {
     private onKeyDown(event: EventKeyboard){
         if (GameStateInput.isSelectingUpgrade()){
             const optionIndex = this.upgradeHotkeys.indexOf(event.keyCode);
-            if (optionIndex >= 0){
+            if (optionIndex >= 0 && optionIndex < this.currentUpgradeOptions.length){
                 this.applyUpgradeOption(optionIndex);
             }
             return;
@@ -347,27 +374,50 @@ export class UIGame extends Component {
         this.runtimeNotifyTimer = duration;
     }
 
-    private onEliteSpawn(spawnCount: number, totalAlive: number, elapsedSeconds: number){
+    private onEliteSpawn(spawnCount: number, totalAlive: number, elapsedSeconds: number, eliteName: string = "代码屎山"){
         const minute = Math.floor(elapsedSeconds / 60);
         const second = elapsedSeconds % 60;
         const secondText = second < 10 ? `0${second}` : `${second}`;
-        this.showRuntimeNotify(`妖潮异动！精英怪 x${spawnCount} 出现（${minute}:${secondText}，场上 ${totalAlive}）`);
+        this.showRuntimeNotify(`告警：精英【${eliteName}】x${spawnCount} 出现（${minute}:${secondText}，场上 ${totalAlive}）`);
     }
 
     private onEliteKilled(eliteKillCount: number, expReward: number, lootDesc: string){
-        this.showRuntimeNotify(`斩杀精英！奖励 EXP+${expReward}｜战利品：${lootDesc}（累计 ${eliteKillCount}）`, 3.2);
+        this.showRuntimeNotify(`精英处理完成！奖励 EXP+${expReward}｜掉落：${lootDesc}（累计 ${eliteKillCount}）`, 3.2);
     }
 
-    private onEliteCast(castType: string, worldPosition: Vec3){
+    private onEliteCast(castType: string, worldPosition: Vec3, source: string = "", scale: number = 0, duration: number = 0){
         if (worldPosition){
             EffectManager.instance.findEffectNode(EffectConst.EffDie, worldPosition);
         }
         if (castType === "dash"){
-            this.showRuntimeNotify("精英突进预警！注意走位！", 1.3);
+            this.showRuntimeNotify("代码屎山突进预警！注意走位！", 1.3);
             return;
         }
         if (castType === "spread"){
-            this.showRuntimeNotify("精英散射预警！注意扇形弹幕！", 1.3);
+            this.showRuntimeNotify("代码屎山散射预警！注意扇形弹幕！", 1.3);
+            return;
+        }
+        if (castType === "burden"){
+            const sourceText = source || "代码屎山";
+            const scaleText = scale > 0 ? `x${scale.toFixed(2)}` : "x1.25";
+            const durationText = duration > 0 ? duration.toFixed(1) : "2.0";
+            this.showRuntimeNotify(`${sourceText}施加维护负担！攻速降低（间隔${scaleText}，${durationText}s）`, 2.0);
+            return;
+        }
+        if (castType === "bossRush"){
+            this.showRuntimeNotify("老板画饼：愿景冲刺！全场敌人移速提高！", 2.3);
+            return;
+        }
+        if (castType === "pie"){
+            this.showRuntimeNotify("老板画饼：场上出现伪增益点，谨慎接触！", 2.3);
+            return;
+        }
+        if (castType === "pieHit"){
+            this.showRuntimeNotify("踩到大饼陷阱！短时间输出效率下降！", 1.8);
+            return;
+        }
+        if (castType === "finalStand"){
+            this.showRuntimeNotify("老板：再坚持一下！需求潮进入加班冲刺阶段！", 2.6);
         }
     }
 
@@ -375,22 +425,32 @@ export class UIGame extends Component {
         if (worldPosition){
             EffectManager.instance.findEffectNode(EffectConst.EffDie, worldPosition);
         }
-        this.showRuntimeNotify(`拾取灵核：EXP +${expReward}，生命 +${healValue}`, 1.9);
+        this.showRuntimeNotify(`拾取优化包：EXP +${expReward}，生命 +${healValue}`, 1.9);
     }
 
-    private onBossWarning(remainSeconds: number){
-        this.showRuntimeNotify(`天威降临！Boss 将在 ${remainSeconds}s 后登场`, 1.8);
+    private onBossWarning(remainSeconds: number, bossName: string = "老板的大饼"){
+        this.showRuntimeNotify(`预警：${bossName} 将在 ${remainSeconds}s 后登场`, 1.8);
     }
 
     private onBossSpawn(bossName: string, elapsedSeconds: number){
         const minute = Math.floor(elapsedSeconds / 60);
         const second = elapsedSeconds % 60;
         const secondText = second < 10 ? `0${second}` : `${second}`;
-        this.showRuntimeNotify(`⚠ Boss【${bossName}】已降临（${minute}:${secondText}）`, 3.2);
+        this.showRuntimeNotify(`⚠ Boss【${bossName}】开始输出愿景（${minute}:${secondText}）`, 3.2);
     }
 
     private onBossKilled(expReward: number, playerLevel: number){
-        this.showRuntimeNotify(`Boss 已被击败！EXP +${expReward}，当前境界 Lv.${playerLevel}`, 3.2);
+        this.showRuntimeNotify(`Boss 已被击败！EXP +${expReward}，当前等级 Lv.${playerLevel}`, 3.2);
+    }
+
+    private onCareerChanged(roleId: CareerRoleId, roleName: string, stackText: string, specialty: string){
+        if (roleId === "student"){
+            this.showRuntimeNotify(`当前身份【${roleName}】｜${stackText}`, 2.6);
+            return;
+        }
+        const passiveName = CareerRoleConfigs[roleId]?.passiveName ?? "职业被动";
+        const branches = CareerTechTreeConfigs[roleId].map((item)=> item.shortName).join('/');
+        this.showRuntimeNotify(`已专职为【${roleName}】｜${stackText}｜技术树:${branches}｜${passiveName}`, 3.8);
     }
 
     private ensurePlayerEventBinding(){
@@ -425,6 +485,14 @@ export class UIGame extends Component {
     }
 
     private onPlayerUpgrade(level: number){
+        const player = this.getPlayerScript();
+        if (!player){
+            return;
+        }
+        if (player.canSelectSpecialization(level)){
+            this.showSpecializationPanel(level, player);
+            return;
+        }
         this.showUpgradePanel(level);
     }
 
@@ -432,16 +500,47 @@ export class UIGame extends Component {
         if (GameStateInput.isGameOver()){
             return;
         }
+        const player = this.getPlayerScript();
+        if (!player){
+            return;
+        }
         this.currentUpgradeLevel = level;
-        this.upgradeAutoSelectRemain = Math.max(3, this.upgradeAutoSelectSeconds);
         this.ensureUpgradePanel();
-        this.currentUpgradeOptions = this.pickRandomUpgradeOptions(3);
-        this.upgradeTitleLabel.string = `境界突破 Lv.${level}\n请选择一项强化 (按 7 / 8 / 9 快速选择)`;
+        this.upgradePanelMode = "upgrade";
+        this.currentUpgradeOptions = this.pickRandomUpgradeOptions(3, player);
+        this.upgradeAutoSelectRemain = Math.max(0.05, this.upgradeAutoSelectSeconds);
+        this.upgradeTitleLabel.string =
+            `职业成长 Lv.${level}｜当前：${player.getCareerRoleName()}\n` +
+            `技术栈：${player.getCareerStackText()}｜被动：${player.getCareerPassiveName()}｜${player.getCareerBranchStatusText()}\n` +
+            `请选择一项强化 (按 1 / 2 / 3 快速选择)`;
         for (let i = 0; i < this.upgradeOptionLabels.length; i++){
             const option = this.currentUpgradeOptions[i];
-            const key = i + 7;
+            const key = i + 1;
             const rarityTag = option?.rarity === "rare" ? "【稀有】" : "【普通】";
-            this.upgradeOptionLabels[i].string = option ? `[${key}] ${rarityTag}${option.title}\n${option.desc}` : "";
+            const branchTag = option?.branchName ? `【${option.branchName}】` : "";
+            this.upgradeOptionLabels[i].string = option ? `[${key}] ${rarityTag}${branchTag}${option.title}\n${option.desc}` : "";
+            this.upgradeOptionNodes[i].active = !!option;
+        }
+        this.upgradePanel.active = true;
+        GameStateInput.setGameState(GameStateEnum.SelectingUpgrade);
+    }
+
+    private showSpecializationPanel(level: number, player: PlayerTs){
+        if (GameStateInput.isGameOver()){
+            return;
+        }
+        this.currentUpgradeLevel = level;
+        this.ensureUpgradePanel();
+        this.upgradePanelMode = "specialize";
+        this.currentUpgradeOptions = this.createCareerSpecializationOptions();
+        this.upgradeAutoSelectRemain = Math.max(0.5, this.specializationAutoSelectSeconds);
+        this.upgradeTitleLabel.string =
+            `Lv.${level} 达到专职门槛｜当前：${player.getCareerRoleName()}\n` +
+            `请选择职业方向 (按 1 - 6 快速选择)`;
+        for (let i = 0; i < this.upgradeOptionLabels.length; i++){
+            const option = this.currentUpgradeOptions[i];
+            const key = i + 1;
+            this.upgradeOptionLabels[i].string = option ? `[${key}] 【专职】${option.title}\n${option.desc}` : "";
             this.upgradeOptionNodes[i].active = !!option;
         }
         this.upgradePanel.active = true;
@@ -477,17 +576,18 @@ export class UIGame extends Component {
         this.upgradeTitleLabel.fontSize = 30;
         this.upgradeTitleLabel.lineHeight = 36;
 
-        for (let i = 0; i < 3; i++){
+        const optionY = [300, 130, -40, -210, -380, -550];
+        for (let i = 0; i < 6; i++){
             const optionNode = new Node(`UpgradeOption${i + 1}`);
             optionNode.parent = this.upgradePanel;
-            optionNode.setPosition(0, 190 - i * 220, 0);
+            optionNode.setPosition(0, optionY[i], 0);
             const optionTransform = optionNode.addComponent(UITransform);
-            optionTransform.setContentSize(new Size(860, 170));
+            optionTransform.setContentSize(new Size(880, 150));
             optionNode.addComponent(Button);
 
             const optionLabel = optionNode.addComponent(Label);
-            optionLabel.fontSize = 26;
-            optionLabel.lineHeight = 34;
+            optionLabel.fontSize = 22;
+            optionLabel.lineHeight = 30;
 
             const index = i;
             const clickHandler = () => this.applyUpgradeOption(index);
@@ -509,12 +609,21 @@ export class UIGame extends Component {
             return;
         }
         option.apply(player);
+        if (option.branchId){
+            const branchLevel = player.addCareerBranchProgress(option.branchId);
+            if (branchLevel > 0){
+                this.showRuntimeNotify(`技术树推进【${option.branchName ?? option.branchId}】Lv.${branchLevel}`, 2.4);
+            }
+        }
         this.logDebugSummary(`upgrade:${option.title}`);
         this.hideUpgradePanel(true);
     }
 
-    private pickRandomUpgradeOptions(count: number): UpgradeOption[]{
-        const pool = this.createUpgradePool();
+    private pickRandomUpgradeOptions(count: number, player: PlayerTs): UpgradeOption[]{
+        const pool = this.createUpgradePool(player).map((item)=>({
+            ...item,
+            weight: this.resolveUpgradeOptionWeight(item, player),
+        }));
         const picked: UpgradeOption[] = [];
         const rarePool = pool.filter((item)=> item.rarity === "rare");
         const commonPool = pool.filter((item)=> item.rarity === "common");
@@ -540,6 +649,15 @@ export class UIGame extends Component {
         return picked;
     }
 
+    private resolveUpgradeOptionWeight(option: UpgradeOption, player: PlayerTs): number{
+        const fallbackWeight = option.rarity === "rare" ? 0.45 : 1;
+        let weight = option.weight ?? fallbackWeight;
+        if (option.branchId){
+            weight += player.getCareerBranchWeightBonus(option.branchId);
+        }
+        return weight;
+    }
+
     private pickAndRemoveByWeight(pool: UpgradeOption[]): UpgradeOption | null {
         if (pool.length <= 0){
             return null;
@@ -562,109 +680,484 @@ export class UIGame extends Component {
         return pool.pop();
     }
 
-    private createUpgradePool(): UpgradeOption[]{
+    private createCareerSpecializationOptions(): UpgradeOption[]{
+        return CareerSpecializationOrder.map((roleId)=>{
+            const role = CareerRoleConfigs[roleId];
+            const branches = CareerTechTreeConfigs[roleId].map((item)=> item.shortName).join(' / ');
+            return {
+                title: role.name,
+                desc: `技术栈：${role.techStacks.join(' / ')}\n技术树：${branches}\n被动：${role.passiveName}｜${role.specialty}`,
+                rarity: "rare",
+                roleId: role.id,
+                apply: (player) => {
+                    player.applyCareerRole(role.id);
+                },
+            };
+        });
+    }
+
+    private createUpgradePool(player: PlayerTs): UpgradeOption[]{
+        const roleId = player.getCareerRoleId();
+        if (roleId === "student"){
+            return this.createStudentUpgradePool();
+        }
+        return this.createSharedUpgradePool().concat(this.createRoleUpgradePool(roleId));
+    }
+
+    private createStudentUpgradePool(): UpgradeOption[]{
         return [
             {
-                title: "飞剑增幅",
-                desc: "攻击力 +10",
+                title: "数据结构基础",
+                desc: "攻击力 +8",
                 rarity: "common",
-                apply: (player) => player.changeAttack(10),
+                apply: (player) => player.changeAttack(8),
             },
             {
-                title: "疾风连射",
-                desc: "攻击间隔 -0.10 秒",
+                title: "计算机网络",
+                desc: "攻击间隔 -0.06 秒",
                 rarity: "common",
-                apply: (player) => player.changeAttackInterval(-0.1),
+                apply: (player) => player.changeAttackInterval(-0.06),
             },
             {
-                title: "分光剑影",
-                desc: "子弹数量 +1",
-                rarity: "common",
-                apply: (player) => player.changeProjectileCount(1),
-            },
-            {
-                title: "破甲穿云",
+                title: "编译原理",
                 desc: "穿透 +1",
                 rarity: "common",
                 apply: (player) => player.changeProjectilePenetration(1),
             },
             {
-                title: "神识牵引",
-                desc: "开启追踪（已开启则攻击 +8）",
+                title: "算法训练",
+                desc: "子弹数量 +1",
                 rarity: "common",
+                apply: (player) => player.changeProjectileCount(1),
+            },
+            {
+                title: "操作系统调度",
+                desc: "移动速度 +0.6，防御 +1",
+                rarity: "common",
+                apply: (player) => {
+                    player.changeMoveSpeed(0.6);
+                    player.changeDefense(1);
+                },
+            },
+            {
+                title: "数据库导论",
+                desc: "最大生命 +16 并回复 16",
+                rarity: "common",
+                apply: (player) => player.changeMaxHp(16, 16),
+            },
+            {
+                title: "开源实验",
+                desc: "开启追踪，若已开启则攻击 +10",
+                rarity: "rare",
                 apply: (player) => {
                     const traceEnabled = player.isProjectileTraceEnabled();
                     player.setProjectileTraceEnabled(true);
                     if (traceEnabled){
-                        player.changeAttack(8);
+                        player.changeAttack(10);
                     }
                 },
             },
             {
-                title: "御风身法",
-                desc: "移动速度 +0.8",
-                rarity: "common",
-                apply: (player) => player.changeMoveSpeed(0.8),
-            },
-            {
-                title: "护体真元",
-                desc: "防御 +1",
-                rarity: "common",
-                apply: (player) => player.changeDefense(1),
-            },
-            {
-                title: "生机回流",
-                desc: "最大生命 +20 并回复 20",
-                rarity: "common",
-                apply: (player) => player.changeMaxHp(20, 20),
-            },
-            {
-                title: "灵气灌体",
-                desc: "立即回复 25 生命",
-                rarity: "common",
-                apply: (player) => player.heal(25),
-            },
-            {
-                title: "万剑归宗",
-                desc: "子弹数量 +2，穿透 +1",
-                rarity: "rare",
-                weight: 0.35,
-                apply: (player) => {
-                    player.changeProjectileCount(2);
-                    player.changeProjectilePenetration(1);
-                },
-            },
-            {
-                title: "紫府淬体",
-                desc: "最大生命 +40，防御 +2，并回复 40",
-                rarity: "rare",
-                weight: 0.4,
-                apply: (player) => {
-                    player.changeMaxHp(40, 40);
-                    player.changeDefense(2);
-                },
-            },
-            {
-                title: "御雷疾行",
-                desc: "攻速提升（间隔 -0.18）且移速 +1.2",
+                title: "期末冲刺",
+                desc: "攻击 +12，攻击间隔 -0.05 秒",
                 rarity: "rare",
                 weight: 0.38,
                 apply: (player) => {
-                    player.changeAttackInterval(-0.18);
-                    player.changeMoveSpeed(1.2);
-                },
-            },
-            {
-                title: "斩妖真诀",
-                desc: "攻击 +22，攻击间隔 -0.05 秒",
-                rarity: "rare",
-                weight: 0.36,
-                apply: (player) => {
-                    player.changeAttack(22);
+                    player.changeAttack(12);
                     player.changeAttackInterval(-0.05);
                 },
             },
         ];
+    }
+
+    private createSharedUpgradePool(): UpgradeOption[]{
+        return [
+            {
+                title: "Git 提交规范",
+                desc: "攻击 +8",
+                rarity: "common",
+                apply: (player) => player.changeAttack(8),
+            },
+            {
+                title: "代码评审",
+                desc: "攻击间隔 -0.04 秒",
+                rarity: "common",
+                apply: (player) => player.changeAttackInterval(-0.04),
+            },
+            {
+                title: "文档补齐",
+                desc: "最大生命 +14 并回复 14",
+                rarity: "common",
+                apply: (player) => player.changeMaxHp(14, 14),
+            },
+            {
+                title: "脚本自动化",
+                desc: "移动速度 +0.5",
+                rarity: "common",
+                apply: (player) => player.changeMoveSpeed(0.5),
+            },
+            {
+                title: "热修复补丁",
+                desc: "立即回复 22 生命",
+                rarity: "common",
+                apply: (player) => player.heal(22),
+            },
+            {
+                title: "全链路监控",
+                desc: "攻击 +10，防御 +1",
+                rarity: "rare",
+                weight: 0.35,
+                apply: (player) => {
+                    player.changeAttack(10);
+                    player.changeDefense(1);
+                },
+            },
+        ];
+    }
+
+    private withBranch(option: UpgradeOption, branchId: CareerBranchId, branchName: string): UpgradeOption{
+        return {
+            ...option,
+            branchId,
+            branchName,
+        };
+    }
+
+    private createRoleUpgradePool(roleId: CareerRoleId): UpgradeOption[]{
+        switch (roleId){
+        case "frontend":
+            return [
+                this.withBranch({
+                    title: "Vue 组件化",
+                    desc: "子弹数量 +1",
+                    rarity: "common",
+                    apply: (player) => player.changeProjectileCount(1),
+                }, "frontend-component", "组件化流"),
+                this.withBranch({
+                    title: "React Hooks",
+                    desc: "攻击间隔 -0.07 秒",
+                    rarity: "common",
+                    apply: (player) => player.changeAttackInterval(-0.07),
+                }, "frontend-component", "组件化流"),
+                this.withBranch({
+                    title: "Vite 冷启动",
+                    desc: "移动速度 +0.8",
+                    rarity: "common",
+                    apply: (player) => player.changeMoveSpeed(0.8),
+                }, "frontend-engineering", "工程化流"),
+                this.withBranch({
+                    title: "TypeScript 类型收敛",
+                    desc: "攻击 +8，穿透 +1",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeAttack(8);
+                        player.changeProjectilePenetration(1);
+                    },
+                }, "frontend-performance", "性能优化流"),
+                this.withBranch({
+                    title: "前端工程化",
+                    desc: "子弹数量 +1，攻击间隔 -0.08 秒",
+                    rarity: "rare",
+                    weight: 0.36,
+                    apply: (player) => {
+                        player.changeProjectileCount(1);
+                        player.changeAttackInterval(-0.08);
+                    },
+                }, "frontend-engineering", "工程化流"),
+                this.withBranch({
+                    title: "WebGL 渲染优化",
+                    desc: "攻击 +14，子弹数量 +1",
+                    rarity: "rare",
+                    weight: 0.34,
+                    apply: (player) => {
+                        player.changeAttack(14);
+                        player.changeProjectileCount(1);
+                    },
+                }, "frontend-performance", "性能优化流"),
+            ];
+        case "backend":
+            return [
+                this.withBranch({
+                    title: "Java 并发调优",
+                    desc: "攻击 +14",
+                    rarity: "common",
+                    apply: (player) => player.changeAttack(14),
+                }, "backend-concurrency", "高并发流"),
+                this.withBranch({
+                    title: "Spring Boot 治理",
+                    desc: "攻击 +8，攻击间隔 -0.05 秒",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeAttack(8);
+                        player.changeAttackInterval(-0.05);
+                    },
+                }, "backend-service", "服务治理流"),
+                this.withBranch({
+                    title: "MySQL 索引优化",
+                    desc: "穿透 +1",
+                    rarity: "common",
+                    apply: (player) => player.changeProjectilePenetration(1),
+                }, "backend-data", "数据链路流"),
+                this.withBranch({
+                    title: "Redis 缓存命中",
+                    desc: "攻击间隔 -0.06 秒，回复 10 生命",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeAttackInterval(-0.06);
+                        player.heal(10);
+                    },
+                }, "backend-data", "数据链路流"),
+                this.withBranch({
+                    title: "Kafka 消峰",
+                    desc: "攻击 +18，最大生命 +10",
+                    rarity: "rare",
+                    weight: 0.38,
+                    apply: (player) => {
+                        player.changeAttack(18);
+                        player.changeMaxHp(10, 10);
+                    },
+                }, "backend-concurrency", "高并发流"),
+                this.withBranch({
+                    title: "Docker 发布链路",
+                    desc: "最大生命 +18，防御 +1，穿透 +1",
+                    rarity: "rare",
+                    weight: 0.34,
+                    apply: (player) => {
+                        player.changeMaxHp(18, 18);
+                        player.changeDefense(1);
+                        player.changeProjectilePenetration(1);
+                    },
+                }, "backend-service", "服务治理流"),
+            ];
+        case "product":
+            return [
+                this.withBranch({
+                    title: "PRD 拆解",
+                    desc: "攻击 +8，开启追踪",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeAttack(8);
+                        player.setProjectileTraceEnabled(true);
+                    },
+                }, "product-insight", "需求洞察流"),
+                this.withBranch({
+                    title: "Figma 原型迭代",
+                    desc: "移动速度 +0.6，回复 12 生命",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeMoveSpeed(0.6);
+                        player.heal(12);
+                    },
+                }, "product-design", "方案设计流"),
+                this.withBranch({
+                    title: "A/B Test",
+                    desc: "攻击间隔 -0.05 秒",
+                    rarity: "common",
+                    apply: (player) => player.changeAttackInterval(-0.05),
+                }, "product-growth", "增长实验流"),
+                this.withBranch({
+                    title: "用户洞察",
+                    desc: "最大生命 +14，攻击 +6",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeMaxHp(14, 14);
+                        player.changeAttack(6);
+                    },
+                }, "product-insight", "需求洞察流"),
+                this.withBranch({
+                    title: "路线图推进",
+                    desc: "攻击 +10，最大生命 +18，并回复 18",
+                    rarity: "rare",
+                    weight: 0.36,
+                    apply: (player) => {
+                        player.changeAttack(10);
+                        player.changeMaxHp(18, 18);
+                    },
+                }, "product-design", "方案设计流"),
+                this.withBranch({
+                    title: "增长实验平台",
+                    desc: "子弹数量 +1，攻击间隔 -0.06 秒",
+                    rarity: "rare",
+                    weight: 0.34,
+                    apply: (player) => {
+                        player.changeProjectileCount(1);
+                        player.changeAttackInterval(-0.06);
+                    },
+                }, "product-growth", "增长实验流"),
+            ];
+        case "project":
+            return [
+                this.withBranch({
+                    title: "Scrum 站会",
+                    desc: "攻击间隔 -0.06 秒，移动速度 +0.4",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeAttackInterval(-0.06);
+                        player.changeMoveSpeed(0.4);
+                    },
+                }, "project-collab", "协作机制流"),
+                this.withBranch({
+                    title: "Jira 排期",
+                    desc: "最大生命 +12，防御 +1",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeMaxHp(12, 12);
+                        player.changeDefense(1);
+                    },
+                }, "project-schedule", "计划排期流"),
+                this.withBranch({
+                    title: "风险清单",
+                    desc: "回复 16 生命，防御 +1",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.heal(16);
+                        player.changeDefense(1);
+                    },
+                }, "project-risk", "风险管理流"),
+                this.withBranch({
+                    title: "关键路径推进",
+                    desc: "攻击 +8，移动速度 +0.5",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeAttack(8);
+                        player.changeMoveSpeed(0.5);
+                    },
+                }, "project-risk", "风险管理流"),
+                this.withBranch({
+                    title: "里程碑压缩",
+                    desc: "攻击 +10，攻击间隔 -0.10 秒",
+                    rarity: "rare",
+                    weight: 0.36,
+                    apply: (player) => {
+                        player.changeAttack(10);
+                        player.changeAttackInterval(-0.10);
+                    },
+                }, "project-schedule", "计划排期流"),
+                this.withBranch({
+                    title: "跨团队协同",
+                    desc: "子弹数量 +1，防御 +1，移动速度 +0.6",
+                    rarity: "rare",
+                    weight: 0.34,
+                    apply: (player) => {
+                        player.changeProjectileCount(1);
+                        player.changeDefense(1);
+                        player.changeMoveSpeed(0.6);
+                    },
+                }, "project-collab", "协作机制流"),
+            ];
+        case "qa":
+            return [
+                this.withBranch({
+                    title: "Selenium 回归",
+                    desc: "攻击 +8，穿透 +1",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeAttack(8);
+                        player.changeProjectilePenetration(1);
+                    },
+                }, "qa-automation", "自动化流"),
+                this.withBranch({
+                    title: "Cypress 冒烟",
+                    desc: "攻击间隔 -0.07 秒",
+                    rarity: "common",
+                    apply: (player) => player.changeAttackInterval(-0.07),
+                }, "qa-automation", "自动化流"),
+                this.withBranch({
+                    title: "JMeter 压测",
+                    desc: "攻击 +12",
+                    rarity: "common",
+                    apply: (player) => player.changeAttack(12),
+                }, "qa-performance", "性能压测流"),
+                this.withBranch({
+                    title: "Postman 校验",
+                    desc: "开启追踪，若已开启则子弹 +1",
+                    rarity: "common",
+                    apply: (player) => {
+                        const traceEnabled = player.isProjectileTraceEnabled();
+                        player.setProjectileTraceEnabled(true);
+                        if (traceEnabled){
+                            player.changeProjectileCount(1);
+                        }
+                    },
+                }, "qa-gate", "质量门禁流"),
+                this.withBranch({
+                    title: "CI 质量门禁",
+                    desc: "攻击 +10，穿透 +2",
+                    rarity: "rare",
+                    weight: 0.38,
+                    apply: (player) => {
+                        player.changeAttack(10);
+                        player.changeProjectilePenetration(2);
+                    },
+                }, "qa-gate", "质量门禁流"),
+                this.withBranch({
+                    title: "缺陷预测模型",
+                    desc: "攻击间隔 -0.08 秒，开启追踪",
+                    rarity: "rare",
+                    weight: 0.34,
+                    apply: (player) => {
+                        player.changeAttackInterval(-0.08);
+                        player.setProjectileTraceEnabled(true);
+                    },
+                }, "qa-performance", "性能压测流"),
+            ];
+        case "delivery":
+            return [
+                this.withBranch({
+                    title: "Linux 部署",
+                    desc: "最大生命 +16，防御 +1",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeMaxHp(16, 16);
+                        player.changeDefense(1);
+                    },
+                }, "delivery-deploy", "部署交付流"),
+                this.withBranch({
+                    title: "SQL 脚本调优",
+                    desc: "攻击 +8，回复 10 生命",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeAttack(8);
+                        player.heal(10);
+                    },
+                }, "delivery-adaptation", "业务适配流"),
+                this.withBranch({
+                    title: "API 集成联调",
+                    desc: "子弹数量 +1",
+                    rarity: "common",
+                    apply: (player) => player.changeProjectileCount(1),
+                }, "delivery-deploy", "部署交付流"),
+                this.withBranch({
+                    title: "网络配置排障",
+                    desc: "移动速度 +0.5，防御 +1",
+                    rarity: "common",
+                    apply: (player) => {
+                        player.changeMoveSpeed(0.5);
+                        player.changeDefense(1);
+                    },
+                }, "delivery-support", "现场支援流"),
+                this.withBranch({
+                    title: "ERP 场景适配",
+                    desc: "最大生命 +22，并回复 22",
+                    rarity: "rare",
+                    weight: 0.36,
+                    apply: (player) => player.changeMaxHp(22, 22),
+                }, "delivery-adaptation", "业务适配流"),
+                this.withBranch({
+                    title: "现场应急预案",
+                    desc: "攻击 +8，防御 +2，回复 24 生命",
+                    rarity: "rare",
+                    weight: 0.34,
+                    apply: (player) => {
+                        player.changeAttack(8);
+                        player.changeDefense(2);
+                        player.heal(24);
+                    },
+                }, "delivery-support", "现场支援流"),
+            ];
+        default:
+            return [];
+        }
     }
 }
 

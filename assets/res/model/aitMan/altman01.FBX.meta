@@ -169,23 +169,23 @@
       ],
       "subMetas": {}
     },
-    "425ef": {
+    "50f19": {
       "importer": "gltf-embeded-image",
-      "uuid": "5f35effe-a1a1-4c6a-8a36-5ad85ff66628@425ef",
+      "uuid": "5f35effe-a1a1-4c6a-8a36-5ad85ff66628@50f19",
       "displayName": "",
-      "id": "425ef",
-      "name": "贴图 #2.image",
+      "id": "50f19",
+      "name": "altman01.jpg.image",
       "userData": {
         "gltfIndex": 0,
         "fixAlphaTransparencyArtifacts": true,
-        "hasAlpha": true,
+        "hasAlpha": false,
         "type": "texture"
       },
       "ver": "1.0.3",
       "imported": true,
       "files": [
-        ".json",
-        ".png"
+        ".jpg",
+        ".json"
       ],
       "subMetas": {}
     },
@@ -203,7 +203,7 @@
         "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "5f35effe-a1a1-4c6a-8a36-5ad85ff66628@425ef"
+        "imageUuidOrDatabaseUri": "5f35effe-a1a1-4c6a-8a36-5ad85ff66628@50f19"
       },
       "ver": "1.0.22",
       "imported": true,
@@ -248,8 +248,8 @@
   "userData": {
     "imageMetas": [
       {
-        "name": "贴图 #2",
-        "uri": "5f35effe-a1a1-4c6a-8a36-5ad85ff66628@425ef"
+        "name": "altman01.jpg",
+        "uri": "5f35effe-a1a1-4c6a-8a36-5ad85ff66628@50f19"
       }
     ],
     "animationImportSettings": [

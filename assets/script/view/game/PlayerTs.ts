@@ -7,11 +7,14 @@ import { VirtualInput } from '../../data/dynamicData/VirtualInput';
 import { ActorState } from '../../const/ActorState';
 import { EffectManager } from '../../managerGame/EffectManager';
 import { ProjectileEmitter } from '../../managerGame/ProjectileEmitter';
+import { ProjectileManager } from '../../managerGame/ProjectileManager';
 import { MonsterManager } from '../../managerGame/MonsterManager';
 import { Monster } from '../../managerGame/Monster';
 import { MathUtil } from '../../utils/MathUtil';
 import { GameStateInput } from '../../data/dynamicData/GameStateInput';
 import { LevelConfigVo } from '../../data/povo/LevelConfigVo';
+import { CareerRoleConfig, CareerRoleConfigs, CareerRoleId, CareerRolePerks, CareerSpecializationUnlockLevel } from '../../const/CareerConfig';
+import { CareerBranchId, CareerTechBranchConfig, CareerTechTreeConfigs, findCareerTechBranch } from '../../const/TechTreeConfig';
 
 const { ccclass, property} = _decorator;
 const tempShootStart = v3();
@@ -19,6 +22,8 @@ const tempPlayerPos = v3();
 const tempDropPlayerPos = v3();
 const tempDropNodePos = v3();
 const tempDropStep = v3();
+const tempCareerForwardL = v3();
+const tempCareerForwardR = v3();
 
 type EliteDropInfo = {
     node: Node;
@@ -53,6 +58,13 @@ export class PlayerTs extends Component {
     // 工具状态：投射物追踪与穿透（用于调试入口与升级三选一）
     private projectileTraceEnabled: boolean = true;
     private projectilePenetration: number = 1;
+    // 负面效果：维护负担（增大攻击间隔，降低输出频率）
+    private attackIntervalDebuffScale: number = 1;
+    private attackIntervalDebuffRemain: number = 0;
+    private careerRoleId: CareerRoleId = 'student';
+    private careerShotCounter = 0;
+    private careerHitHealCooldown = 0;
+    private careerBranchPoints: Record<string, number> = {};
 
     // 精英灵核掉落（击杀后可拾取）
     private eliteDrops: EliteDropInfo[] = [];
@@ -90,6 +102,16 @@ export class PlayerTs extends Component {
             return;
         }
         this.updateEliteDrops(deltaTime);
+        if (this.attackIntervalDebuffRemain > 0){
+            this.attackIntervalDebuffRemain -= deltaTime;
+            if (this.attackIntervalDebuffRemain <= 0){
+                this.attackIntervalDebuffRemain = 0;
+                this.attackIntervalDebuffScale = 1;
+            }
+        }
+        if (this.careerHitHealCooldown > 0){
+            this.careerHitHealCooldown -= deltaTime;
+        }
 
         this.actor.input.x = VirtualInput.horizontal;
         this.actor.input.z = -VirtualInput.vertical;
@@ -100,7 +122,8 @@ export class PlayerTs extends Component {
             this.actor.changeState(ActorState.Idle);
         }
         this.shootTime += deltaTime;
-        if (this.shootTime > this.actor.rungameInfo.attackInterval){
+        const currentAttackInterval = this.getCurrentAttackInterval();
+        if (this.shootTime > currentAttackInterval){
      
             // 有敌人就攻击，没有就是空闲
             let enmey = this.getNearEnemy();
@@ -126,25 +149,28 @@ export class PlayerTs extends Component {
         // 发射技能
         const arrowStartPos = this.resolveShootStart(tempShootStart);
         let arrowForward: Vec3 = v3();
+        const emitter = this.node.getComponent(ProjectileEmitter);
+        if (!emitter){
+            return;
+        }
 
         // 循环发射角色的普通攻击
         for (let i=0; i < this.actor.rungameInfo.projectileCount; i++){
             
             MathUtil.rotateAround(arrowForward, this.actor.angleInput, Vec3.UP, this._splitAngle[i]);
 
-            let emitter = this.node.getComponent(ProjectileEmitter);
             let projectile = emitter.create();
             // 重置存活时间
             projectile.startTime = 0;
             // 添加发射角色
             projectile.host = this.node;
             const useTrace = this.projectileTraceEnabled && !!target;
-            projectile.target = useTrace ? target : null;
-            projectile.projectileProperty.isTrace = useTrace;
-            projectile.projectileProperty.penetration = this.projectilePenetration;
             projectile.node.forward = arrowForward;
             projectile.node.worldPosition = arrowStartPos;
+            this.careerShotCounter += 1;
+            this.configureProjectile(projectile, useTrace ? target : null, useTrace, false);
         }
+        this.trySpawnCareerExtraProjectiles(emitter, arrowStartPos, target);
     }
 
     private resolveShootStart(out: Vec3): Vec3{
@@ -210,10 +236,11 @@ export class PlayerTs extends Component {
         return minNode;
     }
 
-    onKill(killTarget: Node = null, expReward: number = 1, isEliteKill: boolean = false, isBossKill: boolean = false){
+    onKill(killTarget: Node = null, expReward: number = 1, isEliteKill: boolean = false, isBossKill: boolean = false, deathPos: Vec3 = null){
         // 增加经验
         const gainExp = Math.max(1, Math.floor(expReward));
         this.addExp(gainExp);
+        this.applyCareerKillReward(isEliteKill, isBossKill);
 
         // 记录主角击杀数量
         this.playerDoKill ++;
@@ -221,7 +248,7 @@ export class PlayerTs extends Component {
         if (isEliteKill){
             this.eliteKillCount += 1;
             const lootDesc = this.applyEliteLootReward();
-            director.getScene().emit(OnOrEmitConst.OnEliteKilled, this.eliteKillCount, gainExp, lootDesc);
+            director.getScene().emit(OnOrEmitConst.OnEliteKilled, this.eliteKillCount, gainExp, lootDesc, deathPos);
             if (killTarget && killTarget.isValid){
                 this.spawnEliteCoreDrop(killTarget.getWorldPosition());
             }
@@ -273,9 +300,15 @@ export class PlayerTs extends Component {
        this.actor.rungameInfo.Hp = this.actor.rungameInfo.maxHp;
        this.projectileTraceEnabled = true;
        this.projectilePenetration = 1;
-       this.setProjectileCount(1);
-       director.getScene().emit(OnOrEmitConst.OnPlayerhurt, 1);
-       this.node.emit(OnOrEmitConst.OnExpGain, this.actor.rungameInfo.exp, this.actor.rungameInfo.maxExp, this);
+       this.attackIntervalDebuffScale = 1;
+       this.attackIntervalDebuffRemain = 0;
+       this.careerShotCounter = 0;
+       this.careerHitHealCooldown = 0;
+       this.careerBranchPoints = {};
+        this.setProjectileCount(1);
+        this.applyCareerRole('student', true, true);
+        director.getScene().emit(OnOrEmitConst.OnPlayerhurt, 1);
+        this.node.emit(OnOrEmitConst.OnExpGain, this.actor.rungameInfo.exp, this.actor.rungameInfo.maxExp, this);
 
         return this.actor.rungameInfo;
     }
@@ -315,6 +348,244 @@ export class PlayerTs extends Component {
         return this.projectileTraceEnabled;
     }
 
+    getCurrentLevel(): number{
+        return this.actor?.rungameInfo?.level ?? 1;
+    }
+
+    getCareerRoleId(): CareerRoleId{
+        return this.careerRoleId;
+    }
+
+    getCareerRoleName(): string{
+        return CareerRoleConfigs[this.careerRoleId]?.name ?? '计算机学生';
+    }
+
+    getCareerRoleConfig(): CareerRoleConfig{
+        return CareerRoleConfigs[this.careerRoleId] ?? CareerRoleConfigs.student;
+    }
+
+    getCareerStackText(): string{
+        return this.getCareerRoleConfig().techStacks.join(' / ');
+    }
+
+    getCareerPassiveName(): string{
+        return this.getCareerRoleConfig().passiveName;
+    }
+
+    getCareerPassiveDesc(): string{
+        return this.getCareerRoleConfig().passiveDesc;
+    }
+
+    private getCareerBranchConfigs(): CareerTechBranchConfig[]{
+        return CareerTechTreeConfigs[this.careerRoleId] ?? [];
+    }
+
+    private getCareerBranchFocusConfig(): CareerTechBranchConfig | null{
+        let focus: CareerTechBranchConfig = null;
+        let maxPoint = 0;
+        for (const branch of this.getCareerBranchConfigs()){
+            const points = this.getCareerBranchPoint(branch.id);
+            if (points > maxPoint){
+                maxPoint = points;
+                focus = branch;
+            }
+        }
+        return focus;
+    }
+
+    getCareerBranchPoint(branchId: CareerBranchId): number{
+        return Math.max(0, Math.floor(this.careerBranchPoints[branchId] ?? 0));
+    }
+
+    getCareerBranchStatusText(): string{
+        if (this.careerRoleId === 'student'){
+            return '主修：待专职';
+        }
+        const focus = this.getCareerBranchFocusConfig();
+        if (!focus){
+            return '主修：未定向';
+        }
+        return `主修：${focus.name} Lv.${this.getCareerBranchPoint(focus.id)}`;
+    }
+
+    addCareerBranchProgress(branchId: CareerBranchId, amount: number = 1): number{
+        const branch = findCareerTechBranch(this.careerRoleId, branchId);
+        if (!branch){
+            return 0;
+        }
+        const nextLevel = this.getCareerBranchPoint(branchId) + Math.max(1, Math.floor(amount));
+        this.careerBranchPoints[branchId] = nextLevel;
+        this.actor.rungameInfo.careerBranchId = branch.id;
+        this.actor.rungameInfo.careerBranchName = branch.name;
+        return nextLevel;
+    }
+
+    getCareerBranchWeightBonus(branchId: CareerBranchId): number{
+        const points = this.getCareerBranchPoint(branchId);
+        if (points <= 0){
+            return 0;
+        }
+        const focus = this.getCareerBranchFocusConfig();
+        let bonus = Math.min(0.72, points * 0.18);
+        if (focus?.id === branchId){
+            bonus += 0.24;
+        }
+        return bonus;
+    }
+
+    getCareerPassiveStatusText(): string{
+        switch (this.careerRoleId){
+        case 'frontend':
+            return '双端渲染：每轮攻击追加双侧散射';
+        case 'backend':
+            return '链路穿透：穿透+1，精英/BOSS增伤';
+        case 'product':
+            return '需求回流：追踪命中回复生命';
+        case 'project':
+            return '节奏兜底：减伤并缩短维护负担';
+        case 'qa': {
+            const step = this.careerShotCounter % 4;
+            const remain = step === 0 ? 4 : (4 - step);
+            return `缺陷放大：再射 ${remain} 发触发弱点`;
+        }
+        case 'delivery':
+            return '现场托底：低血减伤，击杀回复';
+        default:
+            return '基础打底：专职前均衡成长';
+        }
+    }
+
+    getCareerUnlockLevel(): number{
+        return CareerSpecializationUnlockLevel;
+    }
+
+    isSpecialized(): boolean{
+        return this.careerRoleId !== 'student';
+    }
+
+    canSelectSpecialization(level?: number): boolean{
+        const currentLevel = level ?? this.getCurrentLevel();
+        return !this.isSpecialized() && currentLevel >= CareerSpecializationUnlockLevel;
+    }
+
+    applyCareerRole(roleId: CareerRoleId, emitEvent: boolean = true, forcePerks: boolean = false): boolean{
+        const config = CareerRoleConfigs[roleId];
+        if (!config){
+            return false;
+        }
+        const changed = this.careerRoleId !== roleId;
+        this.resetCareerRuntimeState();
+        this.careerRoleId = roleId;
+        this.actor.rungameInfo.careerRoleId = config.id;
+        this.actor.rungameInfo.careerRoleName = config.name;
+        if (changed || forcePerks){
+            this.applyCareerPerks(config.basePerks);
+        }
+        if (emitEvent){
+            director.getScene().emit(
+                OnOrEmitConst.OnCareerChanged,
+                config.id,
+                config.name,
+                config.techStacks.join(' / '),
+                config.specialty,
+            );
+        }
+        return changed;
+    }
+
+    getCurrentAttackInterval(): number{
+        const base = this.actor?.rungameInfo?.attackInterval ?? 1;
+        return math.clamp(base * this.attackIntervalDebuffScale, 0.15, 8);
+    }
+
+    applyMaintenanceBurden(scale: number = 1.25, duration: number = 2.4, source: string = "代码屎山"){
+        let nextScale = math.clamp(scale, 1.05, 3);
+        let nextDuration = duration;
+        if (this.careerRoleId === 'project'){
+            nextScale = math.clamp(nextScale * 0.92, 1.02, 3);
+            nextDuration *= 0.65;
+        } else if (this.careerRoleId === 'delivery'){
+            nextScale = math.clamp(nextScale * 0.95, 1.02, 3);
+            nextDuration *= 0.82;
+        }
+        this.attackIntervalDebuffScale = Math.max(this.attackIntervalDebuffScale, nextScale);
+        this.attackIntervalDebuffRemain = Math.max(this.attackIntervalDebuffRemain, nextDuration);
+        director.getScene().emit(
+            OnOrEmitConst.OnEliteCast,
+            "burden",
+            this.node.worldPosition,
+            source,
+            this.attackIntervalDebuffScale,
+            this.attackIntervalDebuffRemain,
+        );
+    }
+
+    adjustOutgoingDamage(damage: number, monster: Monster, projectile: ProjectileManager | null = null): number{
+        let result = damage * (projectile?.projectileProperty?.damageScale ?? 1);
+        switch (this.careerRoleId){
+        case 'backend':
+            result *= monster?.isBoss || monster?.isElite ? 1.35 : 1.08;
+            break;
+        case 'product':
+            if (projectile?.projectileProperty?.isTrace){
+                result *= 1.12;
+            }
+            break;
+        case 'project':
+            if (this.actor.rungameInfo.Hp / Math.max(1, this.actor.rungameInfo.maxHp) <= 0.7){
+                result *= 1.10;
+            }
+            break;
+        case 'delivery':
+            if (this.actor.rungameInfo.Hp / Math.max(1, this.actor.rungameInfo.maxHp) <= 0.6){
+                result *= 1.15;
+            }
+            break;
+        default:
+            break;
+        }
+        return result;
+    }
+
+    adjustIncomingDamage(damage: number): number{
+        let scale = 1;
+        switch (this.careerRoleId){
+        case 'project':
+            scale = 0.85;
+            break;
+        case 'delivery':
+            scale = this.actor.rungameInfo.Hp / Math.max(1, this.actor.rungameInfo.maxHp) <= 0.6 ? 0.75 : 0.92;
+            break;
+        default:
+            break;
+        }
+        return Math.max(1, damage * scale);
+    }
+
+    onProjectileHitMonster(monster: Monster, _damage: number, projectile: ProjectileManager | null = null){
+        if (!monster){
+            return;
+        }
+        if (this.careerRoleId === 'product' && projectile?.projectileProperty?.isTrace){
+            if (this.careerHitHealCooldown <= 0){
+                this.heal(1);
+                this.careerHitHealCooldown = 0.12;
+            }
+        }
+    }
+
+    isMaintenanceBurdenActive(): boolean{
+        return this.attackIntervalDebuffRemain > 0;
+    }
+
+    getMaintenanceBurdenScale(): number{
+        return this.attackIntervalDebuffScale;
+    }
+
+    getMaintenanceBurdenRemain(): number{
+        return Math.max(0, this.attackIntervalDebuffRemain);
+    }
+
     changeDefense(delta: number){
         this.actor.rungameInfo.defense = Math.max(0, this.actor.rungameInfo.defense + delta);
     }
@@ -336,7 +607,11 @@ export class PlayerTs extends Component {
 
     getDebugSummary(): string {
         const info = this.actor.rungameInfo;
-        return `lv=${info.level}, hp=${info.Hp.toFixed(0)}/${info.maxHp.toFixed(0)}, atk=${info.attack.toFixed(0)}, interval=${info.attackInterval.toFixed(2)}, move=${info.moveSpeed.toFixed(1)}, projectile=${info.projectileCount}, pen=${this.projectilePenetration}, trace=${this.projectileTraceEnabled ? "on" : "off"}, kill=${this.playerDoKill}, elite=${this.eliteKillCount}, core=${this.eliteDrops.length}`;
+        const interval = this.getCurrentAttackInterval();
+        const debuff = this.attackIntervalDebuffRemain > 0
+            ? `, burden=x${this.attackIntervalDebuffScale.toFixed(2)}(${this.attackIntervalDebuffRemain.toFixed(1)}s)`
+            : "";
+        return `role=${this.getCareerRoleName()}, passive=${this.getCareerPassiveName()}, branch=${this.getCareerBranchStatusText()}, lv=${info.level}, hp=${info.Hp.toFixed(0)}/${info.maxHp.toFixed(0)}, atk=${info.attack.toFixed(0)}, interval=${interval.toFixed(2)}, move=${info.moveSpeed.toFixed(1)}, projectile=${info.projectileCount}, pen=${this.projectilePenetration}, trace=${this.projectileTraceEnabled ? "on" : "off"}, kill=${this.playerDoKill}, elite=${this.eliteKillCount}, core=${this.eliteDrops.length}${debuff}`;
     }
 
     applyLevelConfig(config: LevelConfigVo | null){
@@ -361,27 +636,27 @@ export class PlayerTs extends Component {
         const roll = Math.random();
         if (roll < 0.20){
             this.changeAttack(this.eliteLootAttack);
-            return `飞剑锐化（攻击 +${this.eliteLootAttack}）`;
+            return `热路径优化（攻击 +${this.eliteLootAttack}）`;
         }
         if (roll < 0.40){
             this.changeAttackInterval(this.eliteLootAttackInterval);
-            return `迅影连发（攻击间隔 ${this.eliteLootAttackInterval.toFixed(2)}）`;
+            return `CI 提速（攻击间隔 ${this.eliteLootAttackInterval.toFixed(2)}）`;
         }
         if (roll < 0.58){
             this.changeProjectileCount(this.eliteLootProjectile);
-            return `剑影增幅（子弹 +${this.eliteLootProjectile}）`;
+            return `脚手架扩展（子弹 +${this.eliteLootProjectile}）`;
         }
         if (roll < 0.74){
             this.changeProjectilePenetration(this.eliteLootPenetration);
-            return `破甲印记（穿透 +${this.eliteLootPenetration}）`;
+            return `接口贯通（穿透 +${this.eliteLootPenetration}）`;
         }
         if (roll < 0.88){
             this.changeMoveSpeed(this.eliteLootMoveSpeed);
-            return `御风诀（移速 +${this.eliteLootMoveSpeed.toFixed(1)}）`;
+            return `工位冲刺（移速 +${this.eliteLootMoveSpeed.toFixed(1)}）`;
         }
 
         this.changeMaxHp(this.eliteLootMaxHp, this.eliteLootMaxHp);
-        return `真元回流（最大生命 +${this.eliteLootMaxHp}，并回复 ${this.eliteLootMaxHp}）`;
+        return `应急预案（最大生命 +${this.eliteLootMaxHp}，并回复 ${this.eliteLootMaxHp}）`;
     }
 
     private addExp(expReward: number){
@@ -498,6 +773,112 @@ export class PlayerTs extends Component {
 
         // 发出主角死亡，让全局知道游戏结束
         director.getScene().emit(OnOrEmitConst.PlayerOnDie);
+    }
+
+    private configureProjectile(projectile: ProjectileManager, target: Node | null, useTrace: boolean, isCareerExtraShot: boolean){
+        projectile.target = useTrace ? target : null;
+        projectile.projectileProperty.isTrace = useTrace;
+        projectile.projectileProperty.penetration = this.projectilePenetration;
+        projectile.projectileProperty.lifeTime = 3.0;
+        projectile.projectileProperty.damageScale = isCareerExtraShot ? 0.58 : 1;
+        projectile.projectileProperty.careerProcTag = '';
+
+        switch (this.careerRoleId){
+        case 'backend':
+            projectile.projectileProperty.penetration += 1;
+            projectile.projectileProperty.lifeTime += 0.4;
+            break;
+        case 'product':
+            if (useTrace){
+                projectile.projectileProperty.careerProcTag = 'productTrace';
+            }
+            break;
+        case 'qa':
+            if (!isCareerExtraShot && this.careerShotCounter % 4 === 0){
+                projectile.projectileProperty.damageScale = 1.75;
+                projectile.projectileProperty.penetration += 1;
+                projectile.projectileProperty.careerProcTag = 'qaWeakspot';
+            }
+            break;
+        case 'delivery':
+            projectile.projectileProperty.lifeTime += 0.2;
+            break;
+        default:
+            break;
+        }
+    }
+
+    private trySpawnCareerExtraProjectiles(emitter: ProjectileEmitter, arrowStartPos: Vec3, target: Node | null){
+        if (this.careerRoleId !== 'frontend' || !target){
+            return;
+        }
+        const spreadRad = math.toRadian(11);
+        MathUtil.rotateAround(tempCareerForwardL, this.actor.angleInput, Vec3.UP, -spreadRad);
+        MathUtil.rotateAround(tempCareerForwardR, this.actor.angleInput, Vec3.UP, spreadRad);
+        this.spawnCareerProjectile(emitter, arrowStartPos, tempCareerForwardL);
+        this.spawnCareerProjectile(emitter, arrowStartPos, tempCareerForwardR);
+    }
+
+    private spawnCareerProjectile(emitter: ProjectileEmitter, arrowStartPos: Vec3, forward: Vec3){
+        const projectile = emitter.create();
+        projectile.startTime = 0;
+        projectile.host = this.node;
+        projectile.node.forward = forward;
+        projectile.node.worldPosition = arrowStartPos;
+        this.configureProjectile(projectile, null, false, true);
+        projectile.projectileProperty.careerProcTag = 'frontendEcho';
+    }
+
+    private applyCareerKillReward(isEliteKill: boolean, isBossKill: boolean){
+        if (this.careerRoleId !== 'delivery'){
+            return;
+        }
+        if (isBossKill){
+            this.heal(25);
+            return;
+        }
+        if (isEliteKill){
+            this.heal(12);
+            return;
+        }
+        this.heal(2);
+    }
+
+    private resetCareerRuntimeState(){
+        this.careerShotCounter = 0;
+        this.careerHitHealCooldown = 0;
+        this.careerBranchPoints = {};
+        this.actor.rungameInfo.careerBranchId = '';
+        this.actor.rungameInfo.careerBranchName = '';
+    }
+
+    private applyCareerPerks(perks: CareerRolePerks){
+        if (perks.attack){
+            this.changeAttack(perks.attack);
+        }
+        if (perks.attackInterval){
+            this.changeAttackInterval(perks.attackInterval);
+        }
+        if (perks.projectileCount){
+            this.changeProjectileCount(perks.projectileCount);
+        }
+        if (perks.penetration){
+            this.changeProjectilePenetration(perks.penetration);
+        }
+        if (perks.moveSpeed){
+            this.changeMoveSpeed(perks.moveSpeed);
+        }
+        if (perks.defense){
+            this.changeDefense(perks.defense);
+        }
+        if (perks.maxHp){
+            this.changeMaxHp(perks.maxHp, perks.heal ?? 0);
+        } else if (perks.heal){
+            this.heal(perks.heal);
+        }
+        if (typeof perks.trace === 'boolean'){
+            this.setProjectileTraceEnabled(perks.trace);
+        }
     }
 }
 

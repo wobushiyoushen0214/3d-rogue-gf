@@ -8,6 +8,7 @@ import { RunGameInfoVo } from '../data/povo/RunGameInfoVo';
 import { ProjectileManager } from './ProjectileManager';
 import { Monster } from './Monster';
 import { ColliderGroup } from '../const/ColliderGroup';
+import type { PlayerTs } from '../view/game/PlayerTs';
 
 const { ccclass, property } = _decorator;
 
@@ -253,6 +254,10 @@ export class Actor extends Component {
      * @param hurtSrc 被攻击角色
      */
      hurt(damage: number, hurtDiretion: Vec3, hurtSrc: Node){
+        const playerTs = this.node.getComponent('PlayerTs') as PlayerTs | null;
+        if (playerTs){
+            damage = playerTs.adjustIncomingDamage(damage);
+        }
         if (this.rungameInfo.defense > damage){
             damage = 1;
         }else {

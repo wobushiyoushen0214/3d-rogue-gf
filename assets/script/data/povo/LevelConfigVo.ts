@@ -26,6 +26,16 @@ export class LevelConfigVo {
     BossType: string ;
 
     /**
+     * EliteDisplayName(精英展示名)
+     */
+    EliteDisplayName?: string;
+
+    /**
+     * BossDisplayName(Boss 展示名)
+     */
+    BossDisplayName?: string;
+
+    /**
      * BossAbility(Boss使用的技能)
      */
     BossAbility: string[];
@@ -136,6 +146,16 @@ export class LevelConfigVo {
     EliteMoveSpeedMultiplier?: number;
 
     /**
+     * EliteBurdenScale(精英维护负担倍率，作用于主角攻击间隔)
+     */
+    EliteBurdenScale?: number;
+
+    /**
+     * EliteBurdenDuration(精英维护负担持续时间 秒)
+     */
+    EliteBurdenDuration?: number;
+
+    /**
      * EliteCoreDropExp(精英灵核拾取经验)
      */
     EliteCoreDropExp?: number;
@@ -214,6 +234,66 @@ export class LevelConfigVo {
      * BossSpawnRadius(Boss离玩家刷新半径)
      */
     BossSpawnRadius?: number;
+
+    /**
+     * BossRushInterval(愿景冲刺触发间隔 秒)
+     */
+    BossRushInterval?: number;
+
+    /**
+     * BossRushDuration(愿景冲刺持续时间 秒)
+     */
+    BossRushDuration?: number;
+
+    /**
+     * BossRushSpeedScale(愿景冲刺期间敌人移速倍率)
+     */
+    BossRushSpeedScale?: number;
+
+    /**
+     * BossPieInterval(画饼陷阱触发间隔 秒)
+     */
+    BossPieInterval?: number;
+
+    /**
+     * BossPieDuration(画饼陷阱存在时间 秒)
+     */
+    BossPieDuration?: number;
+
+    /**
+     * BossPieCount(每次生成画饼陷阱数量)
+     */
+    BossPieCount?: number;
+
+    /**
+     * BossPieRadius(画饼陷阱触发半径)
+     */
+    BossPieRadius?: number;
+
+    /**
+     * BossPieDebuffScale(踩中画饼后的维护负担倍率)
+     */
+    BossPieDebuffScale?: number;
+
+    /**
+     * BossPieDebuffDuration(踩中画饼后的维护负担持续时间 秒)
+     */
+    BossPieDebuffDuration?: number;
+
+    /**
+     * BossPieSpawnRadiusMin(画饼陷阱离玩家最小生成半径)
+     */
+    BossPieSpawnRadiusMin?: number;
+
+    /**
+     * BossPieSpawnRadiusMax(画饼陷阱离玩家最大生成半径)
+     */
+    BossPieSpawnRadiusMax?: number;
+
+    /**
+     * BossFinalStandWaveScale(再坚持一下阶段召唤波次系数)
+     */
+    BossFinalStandWaveScale?: number;
 }
 
 

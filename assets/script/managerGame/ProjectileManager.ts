@@ -49,6 +49,8 @@ export class ProjectileManager extends Component{
         this.projectileProperty.isTrace = false;
         this.projectileProperty.lifeTime = 3.0;
         this.projectileProperty.penetration = 1;
+        this.projectileProperty.damageScale = 1;
+        this.projectileProperty.careerProcTag = "";
     }
 
     update(deltaTime: number){

@@ -57,6 +57,11 @@ export enum OnOrEmitConst{
      OnExpGain = "OnExpGain",
 
      /**
+      * 角色专职变化
+      */
+     OnCareerChanged = "OnCareerChanged",
+
+     /**
       * 精英怪刷新提示
       */
      OnEliteSpawn = "OnEliteSpawn",

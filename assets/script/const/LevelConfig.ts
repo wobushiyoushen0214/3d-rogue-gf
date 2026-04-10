@@ -39,6 +39,8 @@ export class LevelConfig  extends Component {
                 "Dragon"
             ],
             "BossType": "Dragon",
+            "EliteDisplayName": "代码屎山",
+            "BossDisplayName": "老板的大饼",
             "BossAbility": [],
             "EnemyBonus": 1,
             "Vision": 0,
@@ -61,6 +63,8 @@ export class LevelConfig  extends Component {
             "EliteHPMultiplier": 2.8,
             "EliteAttackMultiplier": 1.6,
             "EliteMoveSpeedMultiplier": 1.1,
+            "EliteBurdenScale": 1.3,
+            "EliteBurdenDuration": 2.6,
             "EliteCoreDropExp": 12,
             "EliteCoreDropHeal": 10,
             "EliteCoreDropLifeTime": 18,
@@ -76,7 +80,19 @@ export class LevelConfig  extends Component {
             "BossHPMultiplier": 7.5,
             "BossAttackMultiplier": 2.8,
             "BossMoveSpeedMultiplier": 1.15,
-            "BossSpawnRadius": 24
+            "BossSpawnRadius": 24,
+            "BossRushInterval": 13,
+            "BossRushDuration": 4.2,
+            "BossRushSpeedScale": 1.35,
+            "BossPieInterval": 11,
+            "BossPieDuration": 8.5,
+            "BossPieCount": 3,
+            "BossPieRadius": 1.8,
+            "BossPieDebuffScale": 1.4,
+            "BossPieDebuffDuration": 3.2,
+            "BossPieSpawnRadiusMin": 3.5,
+            "BossPieSpawnRadiusMax": 8.5,
+            "BossFinalStandWaveScale": 0.6
         }
     ]
         

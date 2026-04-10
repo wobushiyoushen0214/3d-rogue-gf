@@ -9,5 +9,11 @@ export class ProjectileProperty{
     // 子弹穿透值
     penetration: number = 0;
 
+    // 子弹额外伤害倍率
+    damageScale: number = 1;
+
+    // 子弹职业触发标签
+    careerProcTag: string = "";
+
 
 }

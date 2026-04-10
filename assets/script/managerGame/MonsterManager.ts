@@ -118,9 +118,10 @@ export class MonsterManager {
             let goalVector = posGoal.minus(goaPositon);
             // 距离方差
             monsterForOne.distance = RVOMath.absSq(goalVector);
+            const runtimeSpeed = monsterForOne.rungameInfo.moveSpeed * Math.max(0.1, monsterForOne.runtimeMoveSpeedScale ?? 1);
             if(monsterForOne.distance > 1.0) {
                 // 没到终点，则设置移动
-                goalVector = RVOMath.normalize(goalVector).scale(monsterForOne.rungameInfo.moveSpeed);
+                goalVector = RVOMath.normalize(goalVector).scale(runtimeSpeed);
             }
 
             let rvo = RVOMath.absSq(goalVector)
@@ -259,6 +260,7 @@ export class MonsterManager {
             monster.distance = 9999;
             monster.isElite = false;
             monster.isBoss = false;
+            monster.runtimeMoveSpeedScale = 1;
         }
         node.active = false;
         PoolManager.instance.putNode(node);
