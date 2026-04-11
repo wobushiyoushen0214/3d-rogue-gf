@@ -14,7 +14,7 @@ import { MathUtil } from '../../utils/MathUtil';
 import { GameStateInput } from '../../data/dynamicData/GameStateInput';
 import { LevelConfigVo } from '../../data/povo/LevelConfigVo';
 import { CareerRoleConfig, CareerRoleConfigs, CareerRoleId, CareerRolePerks, CareerSpecializationUnlockLevel } from '../../const/CareerConfig';
-import { CareerBranchId, CareerTechBranchConfig, CareerTechTreeConfigs, findCareerTechBranch } from '../../const/TechTreeConfig';
+import { CareerBranchId, CareerTechBranchConfig, CareerTechTreeConfigs, findCareerTechBranch, findCareerTechMilestone } from '../../const/TechTreeConfig';
 
 const { ccclass, property} = _decorator;
 const tempShootStart = v3();
@@ -31,6 +31,18 @@ type EliteDropInfo = {
     rewardExp: number;
     rewardHeal: number;
     baseY: number;
+};
+
+type CareerMilestonePreview = {
+    branch: CareerTechBranchConfig;
+    milestoneId: string;
+    milestoneTitle: string;
+    requiredBranchLevel: number;
+    costSkillPoint: number;
+    missingBranchLevel: number;
+    missingSkillPoint: number;
+    ready: boolean;
+    isFocus: boolean;
 };
 
 @ccclass('PlayerTs')
@@ -65,6 +77,7 @@ export class PlayerTs extends Component {
     private careerShotCounter = 0;
     private careerHitHealCooldown = 0;
     private careerBranchPoints: Record<string, number> = {};
+    private careerMilestones: Record<string, number> = {};
 
     // 精英灵核掉落（击杀后可拾取）
     private eliteDrops: EliteDropInfo[] = [];
@@ -296,7 +309,8 @@ export class PlayerTs extends Component {
        this.actor.rungameInfo.moveSpeed = 5.0;
        this.actor.rungameInfo.level = 1;
        this.actor.rungameInfo.exp = 0;
-       this.actor.rungameInfo.maxExp = 40;
+       this.actor.rungameInfo.maxExp = this.getExpRequirementForLevel(1);
+       this.actor.rungameInfo.skillPoint = 0;
        this.actor.rungameInfo.Hp = this.actor.rungameInfo.maxHp;
        this.projectileTraceEnabled = true;
        this.projectilePenetration = 1;
@@ -311,6 +325,28 @@ export class PlayerTs extends Component {
         this.node.emit(OnOrEmitConst.OnExpGain, this.actor.rungameInfo.exp, this.actor.rungameInfo.maxExp, this);
 
         return this.actor.rungameInfo;
+    }
+
+    private getExpRequirementForLevel(level: number): number{
+        const lv = Math.max(1, Math.floor(level));
+        if (lv <= 1){
+            // Lv1 升级体感：1-3 只怪即可升级
+            return 2;
+        }
+        if (lv === 2){
+            return 3;
+        }
+        if (lv === 3){
+            return 5;
+        }
+        if (lv <= 10){
+            return Math.floor(5 + Math.pow(lv - 2, 1.22));
+        }
+        if (lv <= 25){
+            return Math.floor(12 + Math.pow(lv - 7, 1.36));
+        }
+        // 后期继续递增，但不封顶，支持无限等级成长
+        return Math.floor(30 + Math.pow(lv - 18, 1.52));
     }
 
     changeAttack(delta: number){
@@ -350,6 +386,16 @@ export class PlayerTs extends Component {
 
     getCurrentLevel(): number{
         return this.actor?.rungameInfo?.level ?? 1;
+    }
+
+    getSkillPoint(): number{
+        return Math.max(0, Math.floor(this.actor?.rungameInfo?.skillPoint ?? 0));
+    }
+
+    getNextSkillPointLevel(): number{
+        const currentLevel = this.getCurrentLevel();
+        const step = currentLevel % 5;
+        return step === 0 ? currentLevel + 5 : currentLevel + (5 - step);
     }
 
     getCareerRoleId(): CareerRoleId{
@@ -397,6 +443,67 @@ export class PlayerTs extends Component {
         return Math.max(0, Math.floor(this.careerBranchPoints[branchId] ?? 0));
     }
 
+    getCareerFocusBranchId(): CareerBranchId | ''{
+        return this.getCareerBranchFocusConfig()?.id ?? '';
+    }
+
+    getCareerMilestoneRank(branchId: CareerBranchId): number{
+        const branch = findCareerTechBranch(this.careerRoleId, branchId);
+        if (!branch){
+            return 0;
+        }
+        let rank = 0;
+        for (const milestone of branch.milestones){
+            if (this.careerMilestones[milestone.id]){
+                rank += 1;
+            }
+        }
+        return rank;
+    }
+
+    hasCareerMilestone(milestoneId: string): boolean{
+        return !!this.careerMilestones[milestoneId];
+    }
+
+    hasUnlockableCareerMilestone(): boolean{
+        return this.getCareerMilestonePreviewList().some((item)=> item.ready);
+    }
+
+    getCareerMilestoneHudText(): string{
+        if (this.careerRoleId === 'student'){
+            return this.canSelectSpecialization()
+                ? '可专职：选择前端 / 后端 / 产品 / 项目 / 测试 / 实施方向'
+                : `Lv.${CareerSpecializationUnlockLevel} 解锁专职`;
+        }
+
+        const previews = this.getCareerMilestonePreviewList();
+        if (previews.length <= 0){
+            return '技术树已完成全部突破';
+        }
+
+        const readyItems = previews.filter((item)=> item.ready);
+        if (readyItems.length > 0){
+            const target = readyItems[0];
+            const moreText = readyItems.length > 1 ? ` 等${readyItems.length}项` : '';
+            return `可突破：${target.branch.name}·${target.milestoneTitle}${moreText}`;
+        }
+
+        const nextMilestone = previews[0];
+        if (this.getSkillPoint() > 0){
+            if (nextMilestone.missingBranchLevel > 0){
+                return `SP 待分配：${nextMilestone.branch.name} 还差 ${nextMilestone.missingBranchLevel} 级`;
+            }
+            if (nextMilestone.missingSkillPoint > 0){
+                return `分支已达标：再拿 ${nextMilestone.missingSkillPoint} SP 可突破`;
+            }
+        }
+
+        if (nextMilestone.missingBranchLevel <= 0){
+            return `下个技能点 Lv.${this.getNextSkillPointLevel()}｜${nextMilestone.branch.name} 可突破`;
+        }
+        return `下个技能点 Lv.${this.getNextSkillPointLevel()}｜${nextMilestone.branch.name} Lv.${nextMilestone.requiredBranchLevel}`;
+    }
+
     getCareerBranchStatusText(): string{
         if (this.careerRoleId === 'student'){
             return '主修：待专职';
@@ -405,7 +512,9 @@ export class PlayerTs extends Component {
         if (!focus){
             return '主修：未定向';
         }
-        return `主修：${focus.name} Lv.${this.getCareerBranchPoint(focus.id)}`;
+        const milestoneRank = this.getCareerMilestoneRank(focus.id);
+        const suffix = milestoneRank > 0 ? `｜突破 ${milestoneRank}` : '';
+        return `主修：${focus.name} Lv.${this.getCareerBranchPoint(focus.id)}${suffix}`;
     }
 
     addCareerBranchProgress(branchId: CareerBranchId, amount: number = 1): number{
@@ -433,23 +542,109 @@ export class PlayerTs extends Component {
         return bonus;
     }
 
+    canUnlockCareerMilestone(branchId: CareerBranchId, milestoneId: string): boolean{
+        const milestone = findCareerTechMilestone(this.careerRoleId, branchId, milestoneId);
+        if (!milestone){
+            return false;
+        }
+        if (this.careerMilestones[milestone.id]){
+            return false;
+        }
+        if (this.getSkillPoint() < milestone.costSkillPoint){
+            return false;
+        }
+        return this.getCareerBranchPoint(branchId) >= milestone.requiredBranchLevel;
+    }
+
+    unlockCareerMilestone(branchId: CareerBranchId, milestoneId: string): boolean{
+        const milestone = findCareerTechMilestone(this.careerRoleId, branchId, milestoneId);
+        if (!milestone || !this.canUnlockCareerMilestone(branchId, milestoneId)){
+            return false;
+        }
+        this.actor.rungameInfo.skillPoint = Math.max(0, this.actor.rungameInfo.skillPoint - milestone.costSkillPoint);
+        this.careerMilestones[milestone.id] = 1;
+        this.applyCareerPerks(milestone.perks);
+        director.getScene().emit(OnOrEmitConst.OnSkillPointChanged, this.actor.rungameInfo.skillPoint, 0, this.getCurrentLevel());
+        return true;
+    }
+
+    private getCareerMilestonePreviewList(): CareerMilestonePreview[]{
+        if (this.careerRoleId === 'student'){
+            return [];
+        }
+
+        const focusBranchId = this.getCareerBranchFocusConfig()?.id ?? '';
+        const previews: CareerMilestonePreview[] = [];
+        for (const branch of this.getCareerBranchConfigs()){
+            const nextMilestone = branch.milestones.find((item)=> !this.careerMilestones[item.id]);
+            if (!nextMilestone){
+                continue;
+            }
+
+            const branchPoint = this.getCareerBranchPoint(branch.id);
+            const missingBranchLevel = Math.max(0, nextMilestone.requiredBranchLevel - branchPoint);
+            const missingSkillPoint = Math.max(0, nextMilestone.costSkillPoint - this.getSkillPoint());
+            previews.push({
+                branch,
+                milestoneId: nextMilestone.id,
+                milestoneTitle: nextMilestone.title,
+                requiredBranchLevel: nextMilestone.requiredBranchLevel,
+                costSkillPoint: nextMilestone.costSkillPoint,
+                missingBranchLevel,
+                missingSkillPoint,
+                ready: missingBranchLevel <= 0 && missingSkillPoint <= 0,
+                isFocus: focusBranchId === branch.id,
+            });
+        }
+
+        previews.sort((left, right)=>{
+            if (left.ready !== right.ready){
+                return left.ready ? -1 : 1;
+            }
+            if (left.isFocus !== right.isFocus){
+                return left.isFocus ? -1 : 1;
+            }
+            if (left.missingBranchLevel !== right.missingBranchLevel){
+                return left.missingBranchLevel - right.missingBranchLevel;
+            }
+            if (left.missingSkillPoint !== right.missingSkillPoint){
+                return left.missingSkillPoint - right.missingSkillPoint;
+            }
+            return left.requiredBranchLevel - right.requiredBranchLevel;
+        });
+
+        return previews;
+    }
+
     getCareerPassiveStatusText(): string{
         switch (this.careerRoleId){
         case 'frontend':
-            return '双端渲染：每轮攻击追加双侧散射';
+            return this.hasCareerMilestone('frontend-component-4')
+                ? '双端渲染+：每轮攻击追加四向散射'
+                : '双端渲染：每轮攻击追加双侧散射';
         case 'backend':
-            return '链路穿透：穿透+1，精英/BOSS增伤';
+            return this.hasCareerMilestone('backend-data-4')
+                ? '链路穿透+：额外穿透，精英/BOSS再增伤'
+                : '链路穿透：穿透+1，精英/BOSS增伤';
         case 'product':
-            return '需求回流：追踪命中回复生命';
+            return this.hasCareerMilestone('product-insight-4')
+                ? '需求回流+：追踪命中更强回复'
+                : '需求回流：追踪命中回复生命';
         case 'project':
-            return '节奏兜底：减伤并缩短维护负担';
+            return this.hasCareerMilestone('project-risk-4')
+                ? '节奏兜底+：更强减伤并压制维护负担'
+                : '节奏兜底：减伤并缩短维护负担';
         case 'qa': {
-            const step = this.careerShotCounter % 4;
-            const remain = step === 0 ? 4 : (4 - step);
-            return `缺陷放大：再射 ${remain} 发触发弱点`;
+            const weakspotCycle = this.hasCareerMilestone('qa-gate-4') ? 3 : 4;
+            const step = this.careerShotCounter % weakspotCycle;
+            const remain = step === 0 ? weakspotCycle : (weakspotCycle - step);
+            const suffix = this.hasCareerMilestone('qa-gate-4') ? '（强化）' : '';
+            return `缺陷放大${suffix}：再射 ${remain} 发触发弱点`;
         }
         case 'delivery':
-            return '现场托底：低血减伤，击杀回复';
+            return this.hasCareerMilestone('delivery-support-4')
+                ? '现场托底+：低血更抗压，击杀回复提升'
+                : '现场托底：低血减伤，击杀回复';
         default:
             return '基础打底：专职前均衡成长';
         }
@@ -504,6 +699,10 @@ export class PlayerTs extends Component {
         if (this.careerRoleId === 'project'){
             nextScale = math.clamp(nextScale * 0.92, 1.02, 3);
             nextDuration *= 0.65;
+            if (this.hasCareerMilestone('project-risk-4')){
+                nextScale = math.clamp(nextScale * 0.86, 1.01, 3);
+                nextDuration *= 0.72;
+            }
         } else if (this.careerRoleId === 'delivery'){
             nextScale = math.clamp(nextScale * 0.95, 1.02, 3);
             nextDuration *= 0.82;
@@ -525,10 +724,16 @@ export class PlayerTs extends Component {
         switch (this.careerRoleId){
         case 'backend':
             result *= monster?.isBoss || monster?.isElite ? 1.35 : 1.08;
+            if (this.hasCareerMilestone('backend-data-4')){
+                result *= monster?.isBoss || monster?.isElite ? 1.12 : 1.05;
+            }
             break;
         case 'product':
             if (projectile?.projectileProperty?.isTrace){
                 result *= 1.12;
+                if (this.hasCareerMilestone('product-insight-4')){
+                    result *= 1.08;
+                }
             }
             break;
         case 'project':
@@ -551,10 +756,17 @@ export class PlayerTs extends Component {
         let scale = 1;
         switch (this.careerRoleId){
         case 'project':
-            scale = 0.85;
+            scale = this.hasCareerMilestone('project-risk-4') ? 0.76 : 0.85;
+            if (this.hasCareerMilestone('project-risk-4') && this.attackIntervalDebuffRemain > 0){
+                scale *= 0.88;
+            }
             break;
         case 'delivery':
-            scale = this.actor.rungameInfo.Hp / Math.max(1, this.actor.rungameInfo.maxHp) <= 0.6 ? 0.75 : 0.92;
+            if (this.actor.rungameInfo.Hp / Math.max(1, this.actor.rungameInfo.maxHp) <= 0.6){
+                scale = this.hasCareerMilestone('delivery-support-4') ? 0.58 : 0.75;
+            } else {
+                scale = this.hasCareerMilestone('delivery-support-4') ? 0.85 : 0.92;
+            }
             break;
         default:
             break;
@@ -568,8 +780,11 @@ export class PlayerTs extends Component {
         }
         if (this.careerRoleId === 'product' && projectile?.projectileProperty?.isTrace){
             if (this.careerHitHealCooldown <= 0){
-                this.heal(1);
-                this.careerHitHealCooldown = 0.12;
+                const healAmount = this.hasCareerMilestone('product-insight-4')
+                    ? (monster.isBoss || monster.isElite ? 3 : 2)
+                    : 1;
+                this.heal(healAmount);
+                this.careerHitHealCooldown = this.hasCareerMilestone('product-insight-4') ? 0.08 : 0.12;
             }
         }
     }
@@ -611,7 +826,7 @@ export class PlayerTs extends Component {
         const debuff = this.attackIntervalDebuffRemain > 0
             ? `, burden=x${this.attackIntervalDebuffScale.toFixed(2)}(${this.attackIntervalDebuffRemain.toFixed(1)}s)`
             : "";
-        return `role=${this.getCareerRoleName()}, passive=${this.getCareerPassiveName()}, branch=${this.getCareerBranchStatusText()}, lv=${info.level}, hp=${info.Hp.toFixed(0)}/${info.maxHp.toFixed(0)}, atk=${info.attack.toFixed(0)}, interval=${interval.toFixed(2)}, move=${info.moveSpeed.toFixed(1)}, projectile=${info.projectileCount}, pen=${this.projectilePenetration}, trace=${this.projectileTraceEnabled ? "on" : "off"}, kill=${this.playerDoKill}, elite=${this.eliteKillCount}, core=${this.eliteDrops.length}${debuff}`;
+        return `role=${this.getCareerRoleName()}, passive=${this.getCareerPassiveName()}, branch=${this.getCareerBranchStatusText()}, lv=${info.level}, sp=${this.getSkillPoint()}, hp=${info.Hp.toFixed(0)}/${info.maxHp.toFixed(0)}, atk=${info.attack.toFixed(0)}, interval=${interval.toFixed(2)}, move=${info.moveSpeed.toFixed(1)}, projectile=${info.projectileCount}, pen=${this.projectilePenetration}, trace=${this.projectileTraceEnabled ? "on" : "off"}, kill=${this.playerDoKill}, elite=${this.eliteKillCount}, core=${this.eliteDrops.length}${debuff}`;
     }
 
     applyLevelConfig(config: LevelConfigVo | null){
@@ -664,11 +879,17 @@ export class PlayerTs extends Component {
         property.exp += Math.max(1, Math.floor(expReward));
         while (property.exp >= property.maxExp){
             property.exp -= property.maxExp;
-            property.maxExp = Math.ceil(property.maxExp * 1.2);
             property.level  = property.level + 1;
+            property.maxExp = this.getExpRequirementForLevel(property.level);
             property.Hp = Math.min(property.maxHp, property.Hp + property.hpAdd);
             director.getScene().emit(OnOrEmitConst.OnPlayerhurt, property.Hp / property.maxHp);
-            this.node.emit(OnOrEmitConst.OnplayerUpgrade, property.level, this);
+            let gainedSkillPoint = 0;
+            if (property.level % 5 === 0){
+                property.skillPoint += 1;
+                gainedSkillPoint = 1;
+                director.getScene().emit(OnOrEmitConst.OnSkillPointChanged, property.skillPoint, gainedSkillPoint, property.level);
+            }
+            this.node.emit(OnOrEmitConst.OnplayerUpgrade, property.level, this, gainedSkillPoint, property.skillPoint);
         }
         // 广播获得经验给UI系统
         this.node.emit(OnOrEmitConst.OnExpGain, property.exp, property.maxExp, this);
@@ -787,6 +1008,9 @@ export class PlayerTs extends Component {
         case 'backend':
             projectile.projectileProperty.penetration += 1;
             projectile.projectileProperty.lifeTime += 0.4;
+            if (this.hasCareerMilestone('backend-data-4')){
+                projectile.projectileProperty.penetration += 1;
+            }
             break;
         case 'product':
             if (useTrace){
@@ -794,10 +1018,13 @@ export class PlayerTs extends Component {
             }
             break;
         case 'qa':
-            if (!isCareerExtraShot && this.careerShotCounter % 4 === 0){
-                projectile.projectileProperty.damageScale = 1.75;
-                projectile.projectileProperty.penetration += 1;
-                projectile.projectileProperty.careerProcTag = 'qaWeakspot';
+            if (!isCareerExtraShot){
+                const weakspotCycle = this.hasCareerMilestone('qa-gate-4') ? 3 : 4;
+                if (this.careerShotCounter % weakspotCycle === 0){
+                    projectile.projectileProperty.damageScale = this.hasCareerMilestone('qa-gate-4') ? 2.1 : 1.75;
+                    projectile.projectileProperty.penetration += this.hasCareerMilestone('qa-gate-4') ? 2 : 1;
+                    projectile.projectileProperty.careerProcTag = 'qaWeakspot';
+                }
             }
             break;
         case 'delivery':
@@ -812,11 +1039,14 @@ export class PlayerTs extends Component {
         if (this.careerRoleId !== 'frontend' || !target){
             return;
         }
-        const spreadRad = math.toRadian(11);
-        MathUtil.rotateAround(tempCareerForwardL, this.actor.angleInput, Vec3.UP, -spreadRad);
-        MathUtil.rotateAround(tempCareerForwardR, this.actor.angleInput, Vec3.UP, spreadRad);
-        this.spawnCareerProjectile(emitter, arrowStartPos, tempCareerForwardL);
-        this.spawnCareerProjectile(emitter, arrowStartPos, tempCareerForwardR);
+        const spreadAngles = this.hasCareerMilestone('frontend-component-4')
+            ? [-22, -11, 11, 22]
+            : [-11, 11];
+        for (const angle of spreadAngles){
+            const tempForward = angle < 0 ? tempCareerForwardL : tempCareerForwardR;
+            MathUtil.rotateAround(tempForward, this.actor.angleInput, Vec3.UP, math.toRadian(angle));
+            this.spawnCareerProjectile(emitter, arrowStartPos, tempForward);
+        }
     }
 
     private spawnCareerProjectile(emitter: ProjectileEmitter, arrowStartPos: Vec3, forward: Vec3){
@@ -834,20 +1064,21 @@ export class PlayerTs extends Component {
             return;
         }
         if (isBossKill){
-            this.heal(25);
+            this.heal(this.hasCareerMilestone('delivery-support-4') ? 35 : 25);
             return;
         }
         if (isEliteKill){
-            this.heal(12);
+            this.heal(this.hasCareerMilestone('delivery-support-4') ? 18 : 12);
             return;
         }
-        this.heal(2);
+        this.heal(this.hasCareerMilestone('delivery-support-4') ? 4 : 2);
     }
 
     private resetCareerRuntimeState(){
         this.careerShotCounter = 0;
         this.careerHitHealCooldown = 0;
         this.careerBranchPoints = {};
+        this.careerMilestones = {};
         this.actor.rungameInfo.careerBranchId = '';
         this.actor.rungameInfo.careerBranchName = '';
     }

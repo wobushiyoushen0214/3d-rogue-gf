@@ -35,11 +35,18 @@ export class UIMaterInfoTS extends Component {
     private readonly dangerTagColor: Color = new Color(255, 86, 86, 255);
     private readonly burdenWarnMildColor: Color = new Color(255, 186, 72, 255);
     private readonly burdenWarnHeavyColor: Color = new Color(255, 92, 92, 255);
+    private readonly careerBaseColor: Color = new Color(112, 226, 255, 255);
+    private readonly careerReadyColor: Color = new Color(255, 222, 108, 255);
+    private readonly careerHoldColor: Color = new Color(172, 236, 255, 255);
+    private readonly milestoneHintIdleColor: Color = new Color(138, 188, 214, 220);
+    private readonly milestoneHintHoldColor: Color = new Color(170, 236, 255, 230);
+    private readonly milestoneHintReadyColor: Color = new Color(255, 232, 128, 255);
 
     private burdenIconLabel: Label = null;
     private burdenWarnLabel: Label = null;
     private careerLabel: Label = null;
     private passiveLabel: Label = null;
+    private skillPointHintLabel: Label = null;
     private tagRefreshTimer = 0;
 
     @property
@@ -68,6 +75,7 @@ export class UIMaterInfoTS extends Component {
         this.ensureBurdenWarnLabel();
         this.ensureCareerLabel();
         this.ensurePassiveLabel();
+        this.ensureSkillPointHintLabel();
 
         director.getScene().on(OnOrEmitConst.OnPlayerhurt, this.playerHurt, this);
     }
@@ -95,6 +103,7 @@ export class UIMaterInfoTS extends Component {
             this.updatePlayerBurdenHint(player);
             this.updateCareerLabel(player);
             this.updatePassiveLabel(player);
+            this.updateSkillPointHint(player);
         } else {
             if (this.burdenWarnLabel) {
                 this.burdenWarnLabel.node.active = false;
@@ -107,6 +116,9 @@ export class UIMaterInfoTS extends Component {
             }
             if (this.passiveLabel) {
                 this.passiveLabel.node.active = false;
+            }
+            if (this.skillPointHintLabel) {
+                this.skillPointHintLabel.node.active = false;
             }
         }
 
@@ -216,11 +228,11 @@ export class UIMaterInfoTS extends Component {
         const roleNode = new Node('CareerLabel');
         roleNode.parent = this.node;
         roleNode.setPosition(0, 78, 0);
-        roleNode.addComponent(UITransform).setContentSize(new Size(320, 32));
+        roleNode.addComponent(UITransform).setContentSize(new Size(420, 32));
         this.careerLabel = roleNode.addComponent(Label);
         this.careerLabel.fontSize = 18;
         this.careerLabel.lineHeight = 22;
-        this.careerLabel.color = new Color(112, 226, 255, 255);
+        this.careerLabel.color = this.careerBaseColor;
         this.careerLabel.string = '计算机学生';
         this.careerLabel.node.active = false;
     }
@@ -241,6 +253,22 @@ export class UIMaterInfoTS extends Component {
         this.passiveLabel.node.active = false;
     }
 
+    private ensureSkillPointHintLabel() {
+        if (this.skillPointHintLabel) {
+            return;
+        }
+        const hintNode = new Node('SkillPointHintLabel');
+        hintNode.parent = this.node;
+        hintNode.setPosition(0, 28, 0);
+        hintNode.addComponent(UITransform).setContentSize(new Size(620, 26));
+        this.skillPointHintLabel = hintNode.addComponent(Label);
+        this.skillPointHintLabel.fontSize = 13;
+        this.skillPointHintLabel.lineHeight = 18;
+        this.skillPointHintLabel.color = this.milestoneHintIdleColor;
+        this.skillPointHintLabel.string = '';
+        this.skillPointHintLabel.node.active = false;
+    }
+
     private updateCareerLabel(playerNode: Node) {
         if (!this.careerLabel) {
             return;
@@ -250,7 +278,31 @@ export class UIMaterInfoTS extends Component {
             this.careerLabel.node.active = false;
             return;
         }
-        this.careerLabel.string = playerTs.getCareerRoleName();
+        const isStudent = playerTs.getCareerRoleId() === 'student';
+        const canSpecialize = isStudent && playerTs.canSelectSpecialization();
+        const hasReadyMilestone = !isStudent && playerTs.hasUnlockableCareerMilestone();
+        const hasSkillPoint = playerTs.getSkillPoint() > 0;
+        const readyPulse = (Math.sin(game.totalTime * 6) + 1) * 0.5;
+
+        if (isStudent) {
+            const suffix = canSpecialize ? '可专职' : `Lv.${playerTs.getCareerUnlockLevel()} 专职`;
+            this.careerLabel.string = `${playerTs.getCareerRoleName()}｜${suffix}`;
+        } else {
+            const suffix = hasReadyMilestone ? '可突破' : (hasSkillPoint ? '待分配' : `下次 Lv.${playerTs.getNextSkillPointLevel()}`);
+            this.careerLabel.string = `${playerTs.getCareerRoleName()}｜SP ${playerTs.getSkillPoint()}｜${suffix}`;
+        }
+
+        if (canSpecialize || hasReadyMilestone) {
+            const alpha = Math.floor(205 + readyPulse * 50);
+            this.careerLabel.color = this.blendColor(this.careerBaseColor, this.careerReadyColor, 0.45 + readyPulse * 0.55, alpha);
+            this.careerLabel.node.setScale(1 + readyPulse * 0.03, 1 + readyPulse * 0.03, 1);
+        } else if (hasSkillPoint) {
+            this.careerLabel.color = this.blendColor(this.careerBaseColor, this.careerHoldColor, 0.55, 245);
+            this.careerLabel.node.setScale(1, 1, 1);
+        } else {
+            this.careerLabel.color = this.careerBaseColor;
+            this.careerLabel.node.setScale(1, 1, 1);
+        }
         this.careerLabel.node.active = true;
     }
 
@@ -267,6 +319,42 @@ export class UIMaterInfoTS extends Component {
         this.passiveLabel.node.active = true;
     }
 
+    private updateSkillPointHint(playerNode: Node) {
+        if (!this.skillPointHintLabel) {
+            return;
+        }
+        const playerTs = playerNode.getComponent(PlayerTs);
+        if (!playerTs) {
+            this.skillPointHintLabel.node.active = false;
+            return;
+        }
+
+        const hintText = playerTs.getCareerMilestoneHudText();
+        if (!hintText) {
+            this.skillPointHintLabel.node.active = false;
+            return;
+        }
+
+        const isStudent = playerTs.getCareerRoleId() === 'student';
+        const readyState = isStudent ? playerTs.canSelectSpecialization() : playerTs.hasUnlockableCareerMilestone();
+        const hasSkillPoint = playerTs.getSkillPoint() > 0;
+        this.skillPointHintLabel.string = hintText;
+
+        if (readyState) {
+            const pulse = (Math.sin(game.totalTime * 7.2) + 1) * 0.5;
+            const alpha = Math.floor(188 + pulse * 60);
+            this.skillPointHintLabel.color = this.blendColor(this.milestoneHintHoldColor, this.milestoneHintReadyColor, 0.4 + pulse * 0.6, alpha);
+            this.skillPointHintLabel.node.setScale(1 + pulse * 0.04, 1 + pulse * 0.04, 1);
+        } else if (hasSkillPoint) {
+            this.skillPointHintLabel.color = this.milestoneHintHoldColor;
+            this.skillPointHintLabel.node.setScale(1, 1, 1);
+        } else {
+            this.skillPointHintLabel.color = this.milestoneHintIdleColor;
+            this.skillPointHintLabel.node.setScale(1, 1, 1);
+        }
+
+        this.skillPointHintLabel.node.active = true;
+    }
     private updatePlayerBurdenHint(playerNode: Node) {
         if (!this.burdenWarnLabel || !this.burdenIconLabel) {
             return;

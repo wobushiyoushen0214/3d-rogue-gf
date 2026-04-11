@@ -57,6 +57,11 @@ export enum OnOrEmitConst{
      OnExpGain = "OnExpGain",
 
      /**
+      * 技能点变化（totalSkillPoint, gainedThisTime, level）
+      */
+     OnSkillPointChanged = "OnSkillPointChanged",
+
+     /**
       * 角色专职变化
       */
      OnCareerChanged = "OnCareerChanged",

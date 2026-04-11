@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Button, director, input, Input, EventKeyboard, KeyCode, Label, UITransform, Size, BlockInputEvents, Vec3 } from 'cc';
+import { _decorator, Color, Component, Node, Button, director, input, Input, EventKeyboard, KeyCode, Label, UITransform, Size, BlockInputEvents, Vec3 } from 'cc';
 import { EffectConst } from '../../const/EffectConst';
 import { GameStateEnum } from '../../const/GameStateEnum';
 import { GameStateInput } from '../../data/dynamicData/GameStateInput';
@@ -8,7 +8,7 @@ import { MonsterManager } from '../../managerGame/MonsterManager';
 import { PlayerTs } from './PlayerTs';
 import { Simulator } from '../../utils/RVO/Simulator';
 import { CareerRoleConfigs, CareerRoleId, CareerSpecializationOrder } from '../../const/CareerConfig';
-import { CareerBranchId, CareerTechTreeConfigs } from '../../const/TechTreeConfig';
+import { CareerBranchId, CareerMilestoneId, CareerTechTreeConfigs } from '../../const/TechTreeConfig';
 const { ccclass, property } = _decorator;
 type UpgradeOption = {
     title: string;
@@ -18,6 +18,9 @@ type UpgradeOption = {
     roleId?: CareerRoleId;
     branchId?: CareerBranchId;
     branchName?: string;
+    branchProgressDelta?: number;
+    skillPointCost?: number;
+    milestoneId?: CareerMilestoneId;
     apply: (player: PlayerTs) => void;
 };
 type UpgradePanelMode = "upgrade" | "specialize";
@@ -56,6 +59,10 @@ export class UIGame extends Component {
         KeyCode.DIGIT_5,
         KeyCode.DIGIT_6,
     ];
+    private readonly upgradeCommonColor = new Color(232, 240, 255, 255);
+    private readonly upgradeRareColor = new Color(255, 220, 132, 255);
+    private readonly upgradeSkillPointColor = new Color(255, 238, 146, 255);
+    private readonly upgradeFocusColor = new Color(162, 235, 255, 255);
 
     @property
     showRuntimeDebug: boolean = true;
@@ -78,6 +85,7 @@ export class UIGame extends Component {
         director.getScene().on(OnOrEmitConst.OnBossSpawn, this.onBossSpawn, this);
         director.getScene().on(OnOrEmitConst.OnBossKilled, this.onBossKilled, this);
         director.getScene().on(OnOrEmitConst.OnCareerChanged, this.onCareerChanged, this);
+        director.getScene().on(OnOrEmitConst.OnSkillPointChanged, this.onSkillPointChanged, this);
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         this.bindOptionalDebugButtons();
         this.initRuntimeDebugHud();
@@ -95,6 +103,7 @@ export class UIGame extends Component {
         this.safeNodeOff(scene, OnOrEmitConst.OnBossSpawn, this.onBossSpawn);
         this.safeNodeOff(scene, OnOrEmitConst.OnBossKilled, this.onBossKilled);
         this.safeNodeOff(scene, OnOrEmitConst.OnCareerChanged, this.onCareerChanged);
+        this.safeNodeOff(scene, OnOrEmitConst.OnSkillPointChanged, this.onSkillPointChanged);
         input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         this.unbindPlayerEvents();
         for (const binding of this.dynamicButtonBindings){
@@ -453,6 +462,14 @@ export class UIGame extends Component {
         this.showRuntimeNotify(`已专职为【${roleName}】｜${stackText}｜技术树:${branches}｜${passiveName}`, 3.8);
     }
 
+    private onSkillPointChanged(totalSkillPoint: number, gainedThisTime: number, level: number){
+        if (gainedThisTime > 0){
+            const player = this.getPlayerScript();
+            const milestoneHint = player?.getCareerMilestoneHudText();
+            const suffix = milestoneHint ? `｜${milestoneHint}` : '';
+            this.showRuntimeNotify(`技能点 +${gainedThisTime}（当前 ${totalSkillPoint}）｜Lv.${level} 里程碑${suffix}`, 3.2);
+        }
+    }
     private ensurePlayerEventBinding(){
         const player = MonsterManager.instance.player;
         if (player === this.bindedPlayer){
@@ -484,7 +501,7 @@ export class UIGame extends Component {
         }
     }
 
-    private onPlayerUpgrade(level: number){
+    private onPlayerUpgrade(level: number, _player?: PlayerTs, _gainedSkillPoint: number = 0, _totalSkillPoint: number = 0){
         const player = this.getPlayerScript();
         if (!player){
             return;
@@ -509,22 +526,34 @@ export class UIGame extends Component {
         this.upgradePanelMode = "upgrade";
         this.currentUpgradeOptions = this.pickRandomUpgradeOptions(3, player);
         this.upgradeAutoSelectRemain = Math.max(0.05, this.upgradeAutoSelectSeconds);
+        const milestoneHint = player.getCareerMilestoneHudText();
+        const focusBranchId = player.getCareerFocusBranchId();
         this.upgradeTitleLabel.string =
             `职业成长 Lv.${level}｜当前：${player.getCareerRoleName()}\n` +
             `技术栈：${player.getCareerStackText()}｜被动：${player.getCareerPassiveName()}｜${player.getCareerBranchStatusText()}\n` +
-            `请选择一项强化 (按 1 / 2 / 3 快速选择)`;
+            `技能点：${player.getSkillPoint()}（下次 Lv.${player.getNextSkillPointLevel()}）｜${milestoneHint}\n` +
+            `请选择一项强化（按 1 / 2 / 3 快速选择）`;
         for (let i = 0; i < this.upgradeOptionLabels.length; i++){
             const option = this.currentUpgradeOptions[i];
             const key = i + 1;
             const rarityTag = option?.rarity === "rare" ? "【稀有】" : "【普通】";
             const branchTag = option?.branchName ? `【${option.branchName}】` : "";
-            this.upgradeOptionLabels[i].string = option ? `[${key}] ${rarityTag}${branchTag}${option.title}\n${option.desc}` : "";
+            const focusTag = option?.branchId && option.branchId === focusBranchId ? "【主修】" : "";
+            const skillPointTag = option?.skillPointCost ? `【技能点-${option.skillPointCost}】` : "";
+            const breakthroughTag = option?.skillPointCost ? "【可突破】" : "";
+            this.upgradeOptionLabels[i].string = option ? `[${key}] ${rarityTag}${breakthroughTag}${skillPointTag}${focusTag}${branchTag}${option.title}\n${option.desc}` : "";
+            this.upgradeOptionLabels[i].color = !option
+                ? this.upgradeCommonColor
+                : option.skillPointCost
+                    ? this.upgradeSkillPointColor
+                    : (option.branchId && option.branchId === focusBranchId)
+                        ? this.upgradeFocusColor
+                        : (option.rarity === "rare" ? this.upgradeRareColor : this.upgradeCommonColor);
             this.upgradeOptionNodes[i].active = !!option;
         }
         this.upgradePanel.active = true;
         GameStateInput.setGameState(GameStateEnum.SelectingUpgrade);
     }
-
     private showSpecializationPanel(level: number, player: PlayerTs){
         if (GameStateInput.isGameOver()){
             return;
@@ -536,17 +565,17 @@ export class UIGame extends Component {
         this.upgradeAutoSelectRemain = Math.max(0.5, this.specializationAutoSelectSeconds);
         this.upgradeTitleLabel.string =
             `Lv.${level} 达到专职门槛｜当前：${player.getCareerRoleName()}\n` +
-            `请选择职业方向 (按 1 - 6 快速选择)`;
+            `请选择职业方向（按 1 - 6 快速选择）`;
         for (let i = 0; i < this.upgradeOptionLabels.length; i++){
             const option = this.currentUpgradeOptions[i];
             const key = i + 1;
             this.upgradeOptionLabels[i].string = option ? `[${key}] 【专职】${option.title}\n${option.desc}` : "";
+            this.upgradeOptionLabels[i].color = option ? this.upgradeRareColor : this.upgradeCommonColor;
             this.upgradeOptionNodes[i].active = !!option;
         }
         this.upgradePanel.active = true;
         GameStateInput.setGameState(GameStateEnum.SelectingUpgrade);
     }
-
     private hideUpgradePanel(restoreRunning: boolean){
         if (this.upgradePanel){
             this.upgradePanel.active = false;
@@ -609,11 +638,14 @@ export class UIGame extends Component {
             return;
         }
         option.apply(player);
-        if (option.branchId){
-            const branchLevel = player.addCareerBranchProgress(option.branchId);
+        if (option.branchId && (option.branchProgressDelta ?? 0) > 0){
+            const branchLevel = player.addCareerBranchProgress(option.branchId, option.branchProgressDelta);
             if (branchLevel > 0){
                 this.showRuntimeNotify(`技术树推进【${option.branchName ?? option.branchId}】Lv.${branchLevel}`, 2.4);
             }
+        }
+        if (option.skillPointCost && option.skillPointCost > 0 && option.branchName){
+            this.showRuntimeNotify(`技能点突破【${option.branchName}】｜${option.title}`, 2.8);
         }
         this.logDebugSummary(`upgrade:${option.title}`);
         this.hideUpgradePanel(true);
@@ -625,6 +657,10 @@ export class UIGame extends Component {
             weight: this.resolveUpgradeOptionWeight(item, player),
         }));
         const picked: UpgradeOption[] = [];
+        const guaranteedSkillPoint = this.pickAndRemoveSkillPointOption(pool, player);
+        if (guaranteedSkillPoint){
+            picked.push(guaranteedSkillPoint);
+        }
         const rarePool = pool.filter((item)=> item.rarity === "rare");
         const commonPool = pool.filter((item)=> item.rarity === "common");
 
@@ -649,11 +685,33 @@ export class UIGame extends Component {
         return picked;
     }
 
+    private pickAndRemoveSkillPointOption(pool: UpgradeOption[], player: PlayerTs): UpgradeOption | null{
+        if (player.getSkillPoint() <= 0){
+            return null;
+        }
+        const candidates = pool.filter((item)=> (item.skillPointCost ?? 0) > 0);
+        if (candidates.length <= 0){
+            return null;
+        }
+        const selected = this.pickAndRemoveByWeight(candidates);
+        if (!selected){
+            return null;
+        }
+        const index = pool.indexOf(selected);
+        if (index >= 0){
+            pool.splice(index, 1);
+        }
+        return selected;
+    }
+
     private resolveUpgradeOptionWeight(option: UpgradeOption, player: PlayerTs): number{
         const fallbackWeight = option.rarity === "rare" ? 0.45 : 1;
         let weight = option.weight ?? fallbackWeight;
         if (option.branchId){
             weight += player.getCareerBranchWeightBonus(option.branchId);
+        }
+        if (option.skillPointCost && option.skillPointCost > 0){
+            weight += 0.42;
         }
         return weight;
     }
@@ -701,7 +759,9 @@ export class UIGame extends Component {
         if (roleId === "student"){
             return this.createStudentUpgradePool();
         }
-        return this.createSharedUpgradePool().concat(this.createRoleUpgradePool(roleId));
+        return this.createSharedUpgradePool()
+            .concat(this.createRoleUpgradePool(roleId))
+            .concat(this.createSkillPointUpgradePool(player));
     }
 
     private createStudentUpgradePool(): UpgradeOption[]{
@@ -820,7 +880,39 @@ export class UIGame extends Component {
             ...option,
             branchId,
             branchName,
+            branchProgressDelta: option.branchProgressDelta ?? 1,
         };
+    }
+
+    private createSkillPointUpgradePool(player: PlayerTs): UpgradeOption[]{
+        if (player.getSkillPoint() <= 0){
+            return [];
+        }
+        const roleId = player.getCareerRoleId();
+        const branches = CareerTechTreeConfigs[roleId] ?? [];
+        const options: UpgradeOption[] = [];
+        for (const branch of branches){
+            for (const milestone of branch.milestones){
+                if (!player.canUnlockCareerMilestone(branch.id, milestone.id)){
+                    continue;
+                }
+                options.push({
+                    title: `技能点突破·${milestone.title}`,
+                    desc: `消耗 ${milestone.costSkillPoint} 技能点\n分支要求：${branch.name} Lv.${milestone.requiredBranchLevel}\n效果：${milestone.desc}`,
+                    rarity: "rare",
+                    weight: 0.62 + player.getCareerMilestoneRank(branch.id) * 0.08,
+                    branchId: branch.id,
+                    branchName: branch.name,
+                    branchProgressDelta: 0,
+                    skillPointCost: milestone.costSkillPoint,
+                    milestoneId: milestone.id,
+                    apply: (targetPlayer) => {
+                        targetPlayer.unlockCareerMilestone(branch.id, milestone.id);
+                    },
+                });
+            }
+        }
+        return options;
     }
 
     private createRoleUpgradePool(roleId: CareerRoleId): UpgradeOption[]{

@@ -41,6 +41,11 @@ export class level extends Component {
 
     // 鍦板浘鍒锋柊闂撮殧
     private mapRefreshInterval: number = 0.5;
+    private spawnTimer: number = 0;
+    private spawnIntervalFloor: number = 0.85;
+    private spawnIntervalLevelDecay: number = 0.04;
+    private spawnIntervalTimeDecayRate: number = 0.055;
+    private spawnCountLevelBonusRate: number = 0.35;
 
     // 鍒锋€棿闅?    private spawnInterval: number = 10;
 
@@ -127,6 +132,10 @@ export class level extends Component {
         this.hpGrowthPerTick = level.HPGrowthPerTick ?? this.hpGrowthPerTick;
         this.attackGrowthPerTick = level.AttackGrowthPerTick ?? this.attackGrowthPerTick;
         this.spawnCountGrowthPerTick = level.SpawnCountGrowthPerTick ?? this.spawnCountGrowthPerTick;
+        this.spawnIntervalFloor = level.SpawnIntervalFloor ?? this.spawnIntervalFloor;
+        this.spawnIntervalLevelDecay = level.SpawnIntervalLevelDecay ?? this.spawnIntervalLevelDecay;
+        this.spawnIntervalTimeDecayRate = level.SpawnIntervalTimeDecayRate ?? this.spawnIntervalTimeDecayRate;
+        this.spawnCountLevelBonusRate = level.SpawnCountLevelBonusRate ?? this.spawnCountLevelBonusRate;
         this.eliteUnlockTime = level.EliteUnlockTime ?? this.eliteUnlockTime;
         this.eliteSpawnInterval = level.EliteSpawnInterval ?? this.eliteSpawnInterval;
         this.eliteSpawnCount = level.EliteSpawnCount ?? this.eliteSpawnCount;
@@ -179,19 +188,8 @@ export class level extends Component {
         });
 
 
-        // 关卡逻辑：定时刷怪与数值成长
-        this.schedule(() => {
-            if (GameStateInput.canUpdateWorld()){
-                console.log("开始创建敌人: " + game.totalTime);
-
-                if (MonsterManager.instance.goalvoes.size >= this.maxAlive){
-                    return;
-                }
-                this.randomSpawn(this.count, false);
-
-                console.log("创建完成: " + game.totalTime);
-            }          
-        }, this.spawnInterval, macro.REPEAT_FOREVER, 1.0);
+        // 普通刷怪由 update 内的动态计时器驱动，便于随时间和等级加速
+        this.spawnTimer = Math.max(0.8, this.spawnInterval);
 
         if (this.eliteSpawnInterval > 0 && this.eliteSpawnCount > 0){
             this.schedule(()=>{
@@ -217,12 +215,7 @@ export class level extends Component {
         director.getScene().on(OnOrEmitConst.OnEliteKilled, this.onEliteKilled, this);
         director.getScene().on(OnOrEmitConst.OnBossKilled, this.onBossKilled, this);
 
-        // 怪物增强计时器
-        this.schedule(() => {
-            this.baseHP += this.hpGrowthPerTick;
-            this.baseAttack += this.attackGrowthPerTick;
-            this.count += this.spawnCountGrowthPerTick;
-        }, this.difficultyInterval, macro.REPEAT_FOREVER, 0);
+        // 难度增强改为时间 + 等级双轴动态计算
     }
 
     // 閿€姣?
@@ -251,6 +244,7 @@ export class level extends Component {
 
         if (GameStateInput.canUpdateWorld()){
             this.battleElapsed += deltaTime;
+            this.updateDynamicSpawn(deltaTime);
             this.updateBossSpawnState();
             this.updateBossEvent(deltaTime);
             this.refashMap += deltaTime;
@@ -261,6 +255,58 @@ export class level extends Component {
             // 鏁屼汉绉诲姩
             MonsterManager.instance.setPreferredVelocities(deltaTime);
         }
+    }
+
+    private getPlayerLevel(): number{
+        const player = MonsterManager.instance.player;
+        if (!player){
+            return 1;
+        }
+        const playerTs = player.getComponent(PlayerTs);
+        return Math.max(1, playerTs?.getCurrentLevel() ?? 1);
+    }
+
+    private getDynamicSpawnInterval(): number{
+        const level = this.getPlayerLevel();
+        const tickProgress = this.difficultyInterval > 0
+            ? this.battleElapsed / this.difficultyInterval
+            : this.battleElapsed / 30;
+        const intervalDecayByTime = tickProgress * this.spawnIntervalTimeDecayRate;
+        const intervalDecayByLevel = Math.max(0, level - 1) * this.spawnIntervalLevelDecay;
+        return Math.max(this.spawnIntervalFloor, this.spawnInterval - intervalDecayByTime - intervalDecayByLevel);
+    }
+
+    private getDynamicSpawnCount(): number{
+        const level = this.getPlayerLevel();
+        const tickProgress = this.difficultyInterval > 0
+            ? this.battleElapsed / this.difficultyInterval
+            : this.battleElapsed / 30;
+        const timeBonus = Math.floor(tickProgress * Math.max(1, this.spawnCountGrowthPerTick));
+        const levelBonus = Math.floor(Math.max(0, level - 1) * this.spawnCountLevelBonusRate);
+        const waveCount = this.count + timeBonus + levelBonus;
+        return Math.max(1, Math.min(this.maxAlive, waveCount));
+    }
+
+    private getRuntimeDifficultyScale(): number{
+        const level = this.getPlayerLevel();
+        const tickProgress = this.difficultyInterval > 0
+            ? this.battleElapsed / this.difficultyInterval
+            : this.battleElapsed / 30;
+        const hpScale = 1 + tickProgress * this.hpGrowthPerTick + Math.max(0, level - 1) * Math.max(0.02, this.hpGrowthPerTick * 0.45);
+        const attackScale = 1 + tickProgress * this.attackGrowthPerTick + Math.max(0, level - 1) * Math.max(0.015, this.attackGrowthPerTick * 0.42);
+        return Math.max(1, (hpScale + attackScale) * 0.5);
+    }
+
+    private updateDynamicSpawn(deltaTime: number){
+        this.spawnTimer -= deltaTime;
+        if (this.spawnTimer > 0){
+            return;
+        }
+        this.spawnTimer = this.getDynamicSpawnInterval();
+        if (MonsterManager.instance.goalvoes.size >= this.maxAlive){
+            return;
+        }
+        this.randomSpawn(this.getDynamicSpawnCount(), false);
     }
 
     // 关卡逻辑：初始化刷怪
@@ -280,6 +326,10 @@ export class level extends Component {
         if (!player || !MonsterManager.instance.goalvoes){
             return spawnCount;
         }
+        const runtimeDifficulty = this.getRuntimeDifficultyScale();
+        const runtimeBaseHp = this.baseHP * runtimeDifficulty;
+        const runtimeNormalBaseHp = Math.max(0, runtimeBaseHp - 1);
+        const runtimeBaseAttack = this.baseAttack * runtimeDifficulty;
         for (let i = 0; i< monsterNum; i++){
             if (MonsterManager.instance.goalvoes.size >= this.maxAlive){
                 break;
@@ -303,14 +353,15 @@ export class level extends Component {
                 if (monster){
                     if (isElite){
                         monster.monsterInit(
-                            this.baseHP,
-                            this.baseAttack,
+                            runtimeBaseHp,
+                            runtimeBaseAttack,
                             this.eliteHPMultiplier,
                             this.eliteAttackMultiplier,
                             this.eliteMoveSpeedMultiplier,
                         );
                     } else {
-                        monster.monsterInit(this.baseHP, this.baseAttack);
+                        // 普通小怪前期保持一枪可清，随后再随时间和等级逐步变硬
+                        monster.monsterInit(runtimeNormalBaseHp, runtimeBaseAttack);
                     }
                 }
                 spawnCount += 1;
@@ -354,10 +405,11 @@ export class level extends Component {
             return;
         }
         const monster = bossNode.getComponent(Monster);
+        const runtimeDifficulty = this.getRuntimeDifficultyScale();
         if (monster){
             monster.monsterInit(
-                this.baseHP,
-                this.baseAttack,
+                this.baseHP * runtimeDifficulty,
+                this.baseAttack * runtimeDifficulty,
                 this.bossHPMultiplier,
                 this.bossAttackMultiplier,
                 this.bossMoveSpeedMultiplier,
@@ -406,7 +458,8 @@ export class level extends Component {
             if (!splitMonster){
                 continue;
             }
-            splitMonster.monsterInit(this.baseHP * 0.65, this.baseAttack * 0.65);
+            const runtimeDifficulty = this.getRuntimeDifficultyScale();
+            splitMonster.monsterInit(this.baseHP * runtimeDifficulty * 0.65, this.baseAttack * runtimeDifficulty * 0.65);
         }
     }
 

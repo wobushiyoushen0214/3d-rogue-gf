@@ -106,6 +106,26 @@ export class LevelConfigVo {
     SpawnCountGrowthPerTick?: number;
 
     /**
+     * SpawnIntervalFloor(普通怪最短刷怪间隔 秒)
+     */
+    SpawnIntervalFloor?: number;
+
+    /**
+     * SpawnIntervalLevelDecay(玩家每升 1 级，普通怪刷怪间隔额外缩短值)
+     */
+    SpawnIntervalLevelDecay?: number;
+
+    /**
+     * SpawnIntervalTimeDecayRate(随战斗时间推进的刷怪间隔缩短系数)
+     */
+    SpawnIntervalTimeDecayRate?: number;
+
+    /**
+     * SpawnCountLevelBonusRate(玩家每升 1 级带来的额外刷怪数量系数)
+     */
+    SpawnCountLevelBonusRate?: number;
+
+    /**
      * EliteUnlockTime(首只精英出现时间 秒)
      */
     EliteUnlockTime?: number;

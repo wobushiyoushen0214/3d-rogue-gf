@@ -161,6 +161,15 @@ export class RunGameInfoVo {
     public set careerBranchName(value: string) {
         this._careerBranchName = value;
     }
+
+    // 技能点（每 5 级获得 1 点）
+    private _skillPoint: number = 0;
+    public get skillPoint(): number {
+        return this._skillPoint;
+    }
+    public set skillPoint(value: number) {
+        this._skillPoint = value;
+    }
 }
 
 
