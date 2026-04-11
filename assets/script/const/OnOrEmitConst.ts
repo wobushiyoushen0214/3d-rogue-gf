@@ -100,4 +100,9 @@ export enum OnOrEmitConst{
       * Boss 被击败
       */
      OnBossKilled = "OnBossKilled",
+
+     /**
+      * 请求开始战斗
+      */
+     OnRequestStartRun = "OnRequestStartRun",
 }

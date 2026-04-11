@@ -3,6 +3,27 @@ import { EquipmentVo } from "../data/povo/EquipmentVo";
 
 export class DataTools {
 
+    private static parseStoredObject(key: string): Record<string, any> | null {
+        const str = sys.localStorage.getItem(key);
+        if (!str || str === "{}" || str === "[]") {
+            return null;
+        }
+        return JSON.parse(str) as Record<string, any>;
+    }
+
+    private static recordToMap<T>(record: Record<string, T> | null): Map<string, T> | null {
+        if (!record) {
+            return null;
+        }
+        const result = new Map<string, T>();
+        for (const oneKey in record) {
+            if (Object.prototype.hasOwnProperty.call(record, oneKey)) {
+                result.set(oneKey, record[oneKey]);
+            }
+        }
+        return result;
+    }
+
     static setString(key: string, value: string){
         sys.localStorage.setItem(key, value);
     }
@@ -40,15 +61,11 @@ export class DataTools {
     }
 
     static getMap(key: string): Map<string, string> {
-        let str = sys.localStorage.getItem(key);
-        if (str){
-            if ("{}" == str){
-                return new Map();
-            }
-            var a = new Map<string,string>(Object.entries(JSON.parse(str)));
-            return a;
+        const record = this.parseStoredObject(key);
+        if (record == null){
+            return new Map();
         }
-        return null;
+        return this.recordToMap<string>(record);
     }
 
     static setMap(key: string, value: Map<string, string>){
@@ -57,24 +74,20 @@ export class DataTools {
         }
         var a = JSON.stringify(
             Array.from(value.entries())
-            .reduce((o, [key, value]) => { 
-              o[key] = value; 
-              return o; 
+            .reduce((o, [key, value]) => {
+              o[key] = value;
+              return o;
             }, {})
         );
         sys.localStorage.setItem(key, a);
     }
 
     static getMapByApparel(key: string): Map<string, EquipmentVo> {
-        let str = sys.localStorage.getItem(key);
-        if (str){
-            if ("{}" == str){
-                return new Map();
-            }
-            var a = new Map<string,EquipmentVo>(Object.entries(JSON.parse(str)));
-            return a;
+        const record = this.parseStoredObject(key);
+        if (record == null){
+            return new Map();
         }
-        return null;
+        return this.recordToMap<EquipmentVo>(record);
     }
 
     static setObjectArr(key: string, object: Object[]){
@@ -108,6 +121,4 @@ export class DataTools {
         }
         return null;
     }
-
-    
 }

@@ -91,6 +91,16 @@ export class LevelConfigVo {
     DifficultyInterval?: number;
 
     /**
+     * DifficultyGraceTime(前期缓冲时间 秒，期间难度不主动上升)
+     */
+    DifficultyGraceTime?: number;
+
+    /**
+     * LatePressureScale(中后期难度推进倍率)
+     */
+    LatePressureScale?: number;
+
+    /**
      * HPGrowthPerTick(难度成长时血量增幅)
      */
     HPGrowthPerTick?: number;
@@ -124,6 +134,141 @@ export class LevelConfigVo {
      * SpawnCountLevelBonusRate(玩家每升 1 级带来的额外刷怪数量系数)
      */
     SpawnCountLevelBonusRate?: number;
+
+    /**
+     * DemandSurgeUnlockTime(需求轰炸首次触发时间 秒)
+     */
+    DemandSurgeUnlockTime?: number;
+
+    /**
+     * DemandSurgeInterval(需求轰炸触发间隔 秒)
+     */
+    DemandSurgeInterval?: number;
+
+    /**
+     * DemandSurgeWaveScale(需求轰炸额外波次规模系数)
+     */
+    DemandSurgeWaveScale?: number;
+
+    /**
+     * DemandSurgeRepeatCount(需求轰炸追加波次数)
+     */
+    DemandSurgeRepeatCount?: number;
+
+    /**
+     * DemandSurgeRepeatDelay(需求轰炸追加波次延迟 秒)
+     */
+    DemandSurgeRepeatDelay?: number;
+
+    /**
+     * ScheduleRushUnlockTime(排期冲刺首次触发时间 秒)
+     */
+    ScheduleRushUnlockTime?: number;
+
+    /**
+     * ScheduleRushInterval(排期冲刺触发间隔 秒)
+     */
+    ScheduleRushInterval?: number;
+
+    /**
+     * ScheduleRushDuration(排期冲刺持续时间 秒)
+     */
+    ScheduleRushDuration?: number;
+
+    /**
+     * ScheduleRushSpawnIntervalScale(排期冲刺期间刷怪间隔倍率)
+     */
+    ScheduleRushSpawnIntervalScale?: number;
+
+    /**
+     * ScheduleRushSpawnRadiusScale(排期冲刺期间刷怪半径倍率)
+     */
+    ScheduleRushSpawnRadiusScale?: number;
+
+    /**
+     * ScheduleRushBurstScale(排期冲刺启动时额外波次系数)
+     */
+    ScheduleRushBurstScale?: number;
+
+    /**
+     * ProjectReviewUnlockTime(项目评审首次触发时间 秒)
+     */
+    ProjectReviewUnlockTime?: number;
+
+    /**
+     * ProjectReviewInterval(项目评审触发间隔 秒)
+     */
+    ProjectReviewInterval?: number;
+
+    /**
+     * ProjectReviewWaveCount(项目评审基础波次数量)
+     */
+    ProjectReviewWaveCount?: number;
+
+    /**
+     * ProjectReviewSpawnRadiusMin(项目评审最小刷怪半径)
+     */
+    ProjectReviewSpawnRadiusMin?: number;
+
+    /**
+     * ProjectReviewSpawnRadiusMax(项目评审最大刷怪半径)
+     */
+    ProjectReviewSpawnRadiusMax?: number;
+
+    /**
+     * ProjectReviewBaseHpBonus(项目评审基础生命补正)
+     */
+    ProjectReviewBaseHpBonus?: number;
+
+    /**
+     * ProjectReviewBaseAttackBonus(项目评审基础攻击补正)
+     */
+    ProjectReviewBaseAttackBonus?: number;
+
+    /**
+     * ProjectReviewMoveSpeedScale(项目评审移动压迫倍率)
+     */
+    ProjectReviewMoveSpeedScale?: number;
+
+    /**
+     * IncidentUnlockTime(线上事故首次触发时间 秒)
+     */
+    IncidentUnlockTime?: number;
+
+    /**
+     * IncidentInterval(线上事故触发间隔 秒)
+     */
+    IncidentInterval?: number;
+
+    /**
+     * IncidentWaveCount(线上事故基础波次数量)
+     */
+    IncidentWaveCount?: number;
+
+    /**
+     * IncidentSpawnRadiusMin(线上事故最小刷怪半径)
+     */
+    IncidentSpawnRadiusMin?: number;
+
+    /**
+     * IncidentSpawnRadiusMax(线上事故最大刷怪半径)
+     */
+    IncidentSpawnRadiusMax?: number;
+
+    /**
+     * IncidentBaseHpBonus(线上事故基础生命补正)
+     */
+    IncidentBaseHpBonus?: number;
+
+    /**
+     * IncidentBaseAttackBonus(线上事故基础攻击补正)
+     */
+    IncidentBaseAttackBonus?: number;
+
+    /**
+     * IncidentMoveSpeedScale(线上事故移动压迫倍率)
+     */
+    IncidentMoveSpeedScale?: number;
 
     /**
      * EliteUnlockTime(首只精英出现时间 秒)

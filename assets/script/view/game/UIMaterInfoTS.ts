@@ -1,5 +1,6 @@
 import { _decorator, Camera, Color, Component, director, find, game, Label, Node, ProgressBar, Size, UITransform, Vec3 } from 'cc';
 import { OnOrEmitConst } from '../../const/OnOrEmitConst';
+import { GameStateInput } from '../../data/dynamicData/GameStateInput';
 import { MonsterManager } from '../../managerGame/MonsterManager';
 import { Monster } from '../../managerGame/Monster';
 import { PlayerTs } from './PlayerTs';
@@ -95,7 +96,10 @@ export class UIMaterInfoTS extends Component {
             this.bindPlayerEvents(player);
         }
 
-        if (player && this.masterCamera && this.uiCamera && this.parentTransform) {
+        const showBattleHud = this.shouldShowBattleHud();
+
+        if (player && this.masterCamera && this.uiCamera && this.parentTransform && showBattleHud) {
+            this.setMainHudVisible(true);
             const worldPosition = player.getWorldPosition();
             worldPosition.y += 1.5;
             const screenPos = this.masterCamera.worldToScreen(worldPosition);
@@ -105,6 +109,7 @@ export class UIMaterInfoTS extends Component {
             this.updatePassiveLabel(player);
             this.updateSkillPointHint(player);
         } else {
+            this.setMainHudVisible(false);
             if (this.burdenWarnLabel) {
                 this.burdenWarnLabel.node.active = false;
             }
@@ -120,6 +125,13 @@ export class UIMaterInfoTS extends Component {
             if (this.skillPointHintLabel) {
                 this.skillPointHintLabel.node.active = false;
             }
+        }
+
+        if (!showBattleHud) {
+            this.clearEnemyTags();
+            this.clearCoreTags();
+            this.clearPieTags();
+            return;
         }
 
         this.tagRefreshTimer -= deltaTime;
@@ -191,6 +203,22 @@ export class UIMaterInfoTS extends Component {
             return;
         }
         this.levelNumLabel.string = `${Math.max(1, Math.floor(level))}`;
+    }
+
+    private shouldShowBattleHud(): boolean {
+        return GameStateInput.isRunning() || GameStateInput.isPaused() || GameStateInput.isSelectingUpgrade();
+    }
+
+    private setMainHudVisible(visible: boolean) {
+        if (this.hpProgressBar?.node) {
+            this.hpProgressBar.node.active = visible;
+        }
+        if (this.ExpProgressBar?.node) {
+            this.ExpProgressBar.node.active = visible;
+        }
+        if (this.levelNumLabel?.node) {
+            this.levelNumLabel.node.active = visible;
+        }
     }
 
     private ensureBurdenWarnLabel() {
@@ -285,11 +313,11 @@ export class UIMaterInfoTS extends Component {
         const readyPulse = (Math.sin(game.totalTime * 6) + 1) * 0.5;
 
         if (isStudent) {
-            const suffix = canSpecialize ? '可专职' : `Lv.${playerTs.getCareerUnlockLevel()} 专职`;
-            this.careerLabel.string = `${playerTs.getCareerRoleName()}｜${suffix}`;
+            const suffix = canSpecialize ? '可转职' : `Lv.${playerTs.getCareerUnlockLevel()} 转职`;
+            this.careerLabel.string = `计算机学生 | ${suffix}`;
         } else {
-            const suffix = hasReadyMilestone ? '可突破' : (hasSkillPoint ? '待分配' : `下次 Lv.${playerTs.getNextSkillPointLevel()}`);
-            this.careerLabel.string = `${playerTs.getCareerRoleName()}｜SP ${playerTs.getSkillPoint()}｜${suffix}`;
+            const suffix = hasReadyMilestone ? '可突破' : (hasSkillPoint ? 'SP 待分配' : `下个 SP Lv.${playerTs.getNextSkillPointLevel()}`);
+            this.careerLabel.string = `${playerTs.getCareerRoleName()} | SP ${playerTs.getSkillPoint()} | ${suffix}`;
         }
 
         if (canSpecialize || hasReadyMilestone) {
@@ -315,7 +343,7 @@ export class UIMaterInfoTS extends Component {
             this.passiveLabel.node.active = false;
             return;
         }
-        this.passiveLabel.string = `${playerTs.getCareerPassiveStatusText()}｜${playerTs.getCareerBranchStatusText()}`;
+        this.passiveLabel.string = `${playerTs.getCareerPassiveStatusText()} | ${playerTs.getCareerBranchStatusText()}`;
         this.passiveLabel.node.active = true;
     }
 
@@ -377,7 +405,7 @@ export class UIMaterInfoTS extends Component {
         this.burdenWarnLabel.color = color;
         this.burdenIconLabel.string = severity >= 0.6 ? '!!' : '!';
         this.burdenWarnLabel.string = severity >= 0.6
-            ? `维护负担严重 x${scale.toFixed(2)} ${remain.toFixed(1)}s`
+            ? `严重维护负担 x${scale.toFixed(2)} ${remain.toFixed(1)}s`
             : `维护负担 x${scale.toFixed(2)} ${remain.toFixed(1)}s`;
         this.burdenWarnLabel.node.active = true;
         this.burdenIconLabel.node.active = true;
@@ -490,7 +518,7 @@ export class UIMaterInfoTS extends Component {
         const maxHp = monster.rungameInfo.maxHp > 0 ? monster.rungameInfo.maxHp : hp;
         const percent = Math.ceil(Math.max(0, Math.min(1, maxHp <= 0 ? 0 : hp / maxHp)) * 100);
         if (monster.isBoss) {
-            label.string = `大饼BOSS ${percent}%`;
+            label.string = `大饼 Boss ${percent}%`;
             label.color = this.bossTagColor;
             return;
         }
@@ -614,7 +642,7 @@ export class UIMaterInfoTS extends Component {
         label.fontSize = 20;
         label.lineHeight = 24;
         label.color = this.pieTagColor;
-        label.string = '! 大饼陷阱';
+        label.string = '! 画饼陷阱';
         this.pieTags.set(key, tagNode);
         return tagNode;
     }
@@ -645,12 +673,12 @@ export class UIMaterInfoTS extends Component {
 
             if (typeof radius === 'number') {
                 if (distanceToPlayer >= 0) {
-                    label.string = `${prefix} 大饼陷阱 ${remain.toFixed(1)}s  r=${radius.toFixed(1)}  d=${distanceToPlayer.toFixed(1)}`;
+                    label.string = `${prefix} 画饼陷阱 ${remain.toFixed(1)}s  r=${radius.toFixed(1)}  d=${distanceToPlayer.toFixed(1)}`;
                 } else {
-                    label.string = `${prefix} 大饼陷阱 ${remain.toFixed(1)}s  r=${radius.toFixed(1)}`;
+                    label.string = `${prefix} 画饼陷阱 ${remain.toFixed(1)}s  r=${radius.toFixed(1)}`;
                 }
             } else {
-                label.string = `${prefix} 大饼陷阱 ${remain.toFixed(1)}s`;
+                label.string = `${prefix} 画饼陷阱 ${remain.toFixed(1)}s`;
             }
         }
 

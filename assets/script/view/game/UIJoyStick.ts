@@ -1,4 +1,5 @@
-import { _decorator, Component, Node, CCFloat, input, Input, EventTouch, v3, math, Vec3, view } from 'cc';
+import { _decorator, Component, Node, CCFloat, director, input, Input, EventTouch, v3, math, Vec3, view } from 'cc';
+import { OnOrEmitConst } from '../../const/OnOrEmitConst';
 import { VirtualInput } from '../../data/dynamicData/VirtualInput';
 import { GameStateInput } from '../../data/dynamicData/GameStateInput';
 const { ccclass, property } = _decorator;
@@ -58,11 +59,17 @@ export class UIJoyStick extends Component {
             this.resetVirtualInput();
             return;
         }
-        if (!GameStateInput.canUpdateWorld()){
+        if (GameStateInput.isLoading() || GameStateInput.isGameOver() || GameStateInput.isPaused() || GameStateInput.isSelectingUpgrade()){
             this.onTouchEnd();
             return;
         }
         if (this.activeTouchId !== -1){
+            return;
+        }
+        if (GameStateInput.isReady()){
+            director.getScene()?.emit(OnOrEmitConst.OnRequestStartRun, "joystick");
+        }
+        if (!GameStateInput.canUpdateWorld()){
             return;
         }
         let x = eventTouch.touch.getUILocationX();
@@ -108,8 +115,10 @@ export class UIJoyStick extends Component {
         this.thumbnail.setPosition(localPostion);
 
         const radius = this.radius > 0 ? this.radius : 1;
-        VirtualInput.horizontal = this.thumbnail.position.x / radius;
-        VirtualInput.vertical = this.thumbnail.position.y / radius;
+        VirtualInput.setJoystickAxis(
+            this.thumbnail.position.x / radius,
+            this.thumbnail.position.y / radius,
+        );
     }
 
     // 鼠标结束
@@ -136,8 +145,7 @@ export class UIJoyStick extends Component {
     }
 
     private resetVirtualInput(){
-        VirtualInput.horizontal = 0;
-        VirtualInput.vertical = 0;
+        VirtualInput.resetJoystickAxis();
     }
 }
 
