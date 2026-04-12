@@ -15,15 +15,15 @@ class IdVector {
         this.id = id;
         this.mSphere = mSphere;
     }
-    // 闁告柣鍔嶉埀顑跨窔娴尖晠姊惧鈧懙鎴﹀礆閸℃稑甯抽柣銊ュ椤鎳濋惈鐎廵nt闁汇劌鍩嘾
+    // RVO agent ID
     id: number = null;
-    // 閻熸瑦甯熸竟濠囨儍閸曨喖螡闁绘劗鎳撻悿鍕瑹?
+    // 怪物节点引用
     mSphere: Node = null;
 };
 
 let posGoal = new Vector2(0, 0);
 /**
- * 閻熸瑦甯熸竟濠勭不閿涘嫭鍊炵紒?
+ * 怪物管理器
  *  */ 
 export class MonsterManager {
 
@@ -38,7 +38,7 @@ export class MonsterManager {
         return this._instance;
     }
 
-    // 閻犱焦婢樼紞宥夊箥閳ь剟寮垫径灞剧暠濞达絽绉堕悿鍡涘Υ娴ｈ棄螡闁绘劙鈧稐绻嗛柟顓у灛閳ь兛妞掔粭宀勫礉閵婏腹鍋撴笟鈧导鈺呮⒕濠婂喚鍤犻幖瀛樻⒒濞堟厜gentId
+    // 所有活跃怪物的 agentId 映射
     goalvoes: Map<string, IdVector> = null; 
 
     enemyPool: Pool<Node> = null;
@@ -47,7 +47,7 @@ export class MonsterManager {
     private bossNodeName: string = "";
     /**
      * 
-     * @param onComplet         闁告梻濮惧ù鍥籍閸撲焦鐣遍柛銉у仩閻ㄧ喖宕欓懞銉︽
+     * @param onComplet         预加载完成后的回调
      */
     init(onComplet:()=>void = () =>{}){
 
@@ -55,7 +55,7 @@ export class MonsterManager {
         this.enemyNodeNames = [];
         this.bossNodeName = "";
 
-        // TODO 闂傚洠鍋撻悷鏇氭閹便劑寮ㄩ柅娑滅闁哄秷顫夊畵渚€宕楅崘鎻掑耿闁告梻濮惧ù鍥箑椤忓棗鈷?
+        // TODO 根据关卡配置加载怪物预制体
         const level = LevelConfig.getLevel();
         const normalNames = (level?.MonsterType ?? []).filter((name)=> !!name);
         const uniqueLoadNames = new Set<string>();
@@ -79,8 +79,8 @@ export class MonsterManager {
         });
     }
 
-    // 闁轰礁濂斿Ч澶嬫媴鐠恒劍鏆忛柛鏂诲妽閳ь兛绶氭导鈺呮⒕濠婂嫭鐓欑€殿喖绻掍簺闁?
-    // 闁哄洤鐡ㄩ弻濠囨焻閺勫繒甯嗛柛褎鍔栭悥?
+    // 更新所有怪物的 RVO 期望速度
+    // 每帧驱动 RVO 避障模拟
     setPreferredVelocities(dt: number) {
         const palyer = MonsterManager.instance.player;
         if (palyer == undefined){
@@ -113,23 +113,23 @@ export class MonsterManager {
             posGoal.x = palyer.worldPosition.x;
             posGoal.y = palyer.worldPosition.z;
 
-            // 闁轰礁濂斿Ч澶屾喆閹烘洖顥忕紓浣哥墢閸嬶絾鎷呭鍥╂瀭 - 鐟滅増鎸告晶鐘虫媴瀹ュ洨鏋?
+            // 计算怪物朝玩家方向的目标向量
             let goaPositon = agent.position_;
             let goalVector = posGoal.minus(goaPositon);
-            // 閻犵儤绻勯‖鍥棘閻熺増鈻?
+            // 计算到玩家的距离平方
             monsterForOne.distance = RVOMath.absSq(goalVector);
             const runtimeSpeed = monsterForOne.rungameInfo.moveSpeed * Math.max(0.1, monsterForOne.runtimeMoveSpeedScale ?? 1);
             if(monsterForOne.distance > 1.0) {
-                // 婵炲备鈧啿鐓傜紓浣哥墢閸嬶綁鏁嶇仦钘夌仧閻犱礁澧介悿鍡欑矓鐠囨彃袟
+                // 将目标向量归一化并缩放为移动速度
                 goalVector = RVOMath.normalize(goalVector).scale(runtimeSpeed);
             }
 
             let rvo = RVOMath.absSq(goalVector)
             if (monsterForOne.currState != ActorState.Run || rvo < RVOMath.RVO_EPSILON) {
-                // Agent 鐎瑰憡褰冨﹢顏堟儎椤旂晫鍨奸柛妤€锕ょ欢鐐哄礃閸滃啰绀夐柛妤€鐤囬～瀣▔閾忚娼鹃柟鍓у剳缁辨繄浜搁崱娑掑亾閻斿嘲顔婇悹浣稿綖鐠?
+                // Agent 处于非移动状态或速度过小，停止移动
                 Simulator.instance.setAgentPrefVelocity (entrie.id, new Vector2 (0.0, 0.0));
             }else {
-                // 婵炲备鍓濆﹢浣肝涢埀顒勫蓟閵夈儱鐓傜痪鎵閹告帡鏁嶇仦钘夌仧缂備綀鍛暰缂佸顕ф慨?
+                // 向玩家方向移动，设置期望速度
                 Simulator.instance.setAgentPrefVelocity(entrie.id, goalVector);
             }
         }
@@ -147,7 +147,7 @@ export class MonsterManager {
             Simulator.instance.run(dt);
         }
 
-        // 闁哄洤鐡ㄩ弻濠傘€掗崣澶屽帬闁秆勫姈閻?
+        // 将 RVO 计算后的位置同步到怪物节点
         for(let goalId of Array.from(this.goalvoes.keys())) {
             let entrie = this.goalvoes.get(goalId);
             if (entrie){
@@ -190,7 +190,7 @@ export class MonsterManager {
             return null;
         }
 
-        // 缂佹稑顦欢鐔煎礉閻樼儤绁?
+        // 初始化 RVO 默认代理参数
         if (Simulator.instance.defaultAgent == null){
             Simulator.instance.setAgentDefaults(10, 4, 1, 0.1, 0.5, 15, new Vector2(0, 0));
         }
@@ -207,10 +207,10 @@ export class MonsterManager {
         node.getComponent(Collider).enabled = true;
 
         let monster = node.getComponent(Monster);
-        // 闁告帗绋戠紓鎾诲礉閵婏腹鍋撴笟鈧导鈺呮⒕?agent
+        // 注册怪物到 RVO 仿真中作为 agent
         let p = new Vector2(spawnPos.x, spawnPos.z);
         let idx = Simulator.instance.addAgentByR(p, monster.goalSize*scale);
-        // 閻犱礁澧介悿鍡涙⒕濠婂拋鏆￠悷娆愬笩婢瑰﹦鎷归妸鈺佹
+        // 设置 agent 质量
         Simulator.instance.setAgentMass(idx, 1*scale);
         this.goalvoes.set(node.uuid, new IdVector(idx, node));
         monster.goalId = node.uuid;
@@ -230,7 +230,7 @@ export class MonsterManager {
         this.recycleEnemyNode(node);
     }
 
-    // 闁告帞濞€濞呭孩绋夐埀顒佺▔椤忓嫭韬柛鏂诲妽閳ь兛绶氭导鈺呮⒕濠婂牆娅￠梻鍫涘灮濞堟垹鎲撮幒鏇烆棌
+    // 从 RVO 仿真中移除怪物并清理映射
     removeGoal(goalId: string = null){
         if (!goalId) {
             return;

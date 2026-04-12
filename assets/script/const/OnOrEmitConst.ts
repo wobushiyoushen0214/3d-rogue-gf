@@ -105,4 +105,19 @@ export enum OnOrEmitConst{
       * 请求开始战斗
       */
      OnRequestStartRun = "OnRequestStartRun",
+
+     /**
+      * 普通怪被击杀（用于掉落物判定）
+      */
+     OnNormalKill = "OnNormalKill",
+
+     /**
+      * 掉落物被拾取
+      */
+     OnDropCollected = "OnDropCollected",
+
+     /**
+      * 玩家获得临时 Buff
+      */
+     OnBuffGained = "OnBuffGained",
 }

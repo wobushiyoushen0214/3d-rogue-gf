@@ -59,8 +59,11 @@ export class UIJoyStick extends Component {
             this.resetVirtualInput();
             return;
         }
-        if (GameStateInput.isLoading() || GameStateInput.isGameOver() || GameStateInput.isPaused() || GameStateInput.isSelectingUpgrade()){
+        if (GameStateInput.isLoading() || GameStateInput.isGameOver()){
             this.onTouchEnd();
+            return;
+        }
+        if (GameStateInput.isPaused() || GameStateInput.isSelectingUpgrade()){
             return;
         }
         if (this.activeTouchId !== -1){
@@ -93,8 +96,11 @@ export class UIJoyStick extends Component {
             this.resetVirtualInput();
             return;
         }
-        if (!GameStateInput.canUpdateWorld()){
+        if (GameStateInput.isLoading() || GameStateInput.isGameOver()){
             this.onTouchEnd();
+            return;
+        }
+        if (!GameStateInput.canUpdateWorld()){
             return;
         }
         if (eventTouch.touch.getID() !== this.activeTouchId){

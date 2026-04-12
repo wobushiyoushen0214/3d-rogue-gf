@@ -22,6 +22,24 @@ type PieTrapInfo = {
     radius: number;
 };
 
+type DropItemType = 'coffee' | 'energyDrink';
+
+type DropItemInfo = {
+    node: Node;
+    type: DropItemType;
+    bornTime: number;
+    lifeTime: number;
+    collectRadius: number;
+    magnetRadius: number;
+    baseY: number;
+};
+
+type BuffInfo = {
+    type: string;
+    remainTime: number;
+    scale: number;
+};
+
 @ccclass('level')
 export class level extends Component {
     @property(Prefab)
@@ -130,6 +148,35 @@ export class level extends Component {
     private bossFinalStandWaveScale = 0.6;
     private bossNextPieTime = 0;
     private bossPieTraps: PieTrapInfo[] = [];
+
+    // 本局统计数据
+    private statEliteKills = 0;
+    private statBossKills = 0;
+    private statMaxLevel = 1;
+    private statEventsTriggered = 0;
+
+    // 掉落物系统
+    private dropItems: DropItemInfo[] = [];
+    private dropCoffeeChance = 0.06;
+    private dropCoffeeHealPercent = 0.15;
+    private dropEnergyDrinkChance = 0.03;
+    private dropEnergyDrinkDuration = 10;
+    private dropEnergyDrinkAtkSpeedScale = 0.7;
+    private dropCollectRadius = 1.6;
+    private dropMagnetRadius = 5.0;
+    private dropLifeTime = 15;
+
+    // 玩家临时 Buff
+    private playerBuffs: BuffInfo[] = [];
+
+    // 技术分享会事件
+    private techShareUnlockTime = 180;
+    private techShareInterval = 120;
+    private techShareNextTime = 180;
+    private techSharePickupCount = 3;
+    private techSharePickupRadius = 12;
+    private techShareBuffDuration = 15;
+    private techSharePickups: DropItemInfo[] = [];
 
     private spawnPos: Vec3 = v3();
 
@@ -248,6 +295,7 @@ export class level extends Component {
         const scene = director.getScene();
         scene.on(OnOrEmitConst.OnEliteKilled, this.onEliteKilled, this);
         scene.on(OnOrEmitConst.OnBossKilled, this.onBossKilled, this);
+        scene.on(OnOrEmitConst.OnNormalKill, this.onNormalKill, this);
     }
 
     onDestroy() {
@@ -255,9 +303,12 @@ export class level extends Component {
         if (scene && scene.isValid) {
             scene.off(OnOrEmitConst.OnEliteKilled, this.onEliteKilled, this);
             scene.off(OnOrEmitConst.OnBossKilled, this.onBossKilled, this);
+            scene.off(OnOrEmitConst.OnNormalKill, this.onNormalKill, this);
         }
 
         this.clearBossPieTraps();
+        this.clearDropItems();
+        this.clearTechSharePickups();
         MonsterManager.instance.destroy();
         EffectManager.instance.destroy();
         PoolManager.instance.clearAllNodes();
@@ -279,6 +330,10 @@ export class level extends Component {
         this.updateEliteSpawnState();
         this.updateBossSpawnState();
         this.updateBossEvent(deltaTime);
+        this.updateDropItems(deltaTime);
+        this.updatePlayerBuffs(deltaTime);
+        this.updateTechShareState();
+        this.updateTechSharePickups();
 
         this.refashMap += deltaTime;
         if (this.refashMap > this.mapRefreshInterval) {
@@ -310,9 +365,11 @@ export class level extends Component {
     }
 
     private resetRuntimeState() {
+        this.statEliteKills = 0;
+        this.statBossKills = 0;
+        this.statMaxLevel = 1;
+        this.statEventsTriggered = 0;
         this.refashMap = 0;
-        this.battleElapsed = 0;
-        this.runStarted = false;
         this.spawnTimer = Math.max(0.8, this.spawnInterval);
         this.demandSurgeNextTime = this.demandSurgeUnlockTime;
         this.scheduleRushNextTime = this.scheduleRushUnlockTime;
@@ -329,6 +386,10 @@ export class level extends Component {
         this.bossNextRushTime = 0;
         this.bossNextPieTime = 0;
         this.clearBossPieTraps();
+        this.clearDropItems();
+        this.clearTechSharePickups();
+        this.playerBuffs.length = 0;
+        this.techShareNextTime = this.techShareUnlockTime;
     }
 
     private getPlayerLevel(): number {
@@ -417,6 +478,7 @@ export class level extends Component {
     }
 
     private triggerScheduleRush() {
+        this.statEventsTriggered += 1;
         this.scheduleRushRemain = Math.max(this.scheduleRushRemain, this.scheduleRushDuration);
         const burstWaveCount = Math.max(3, Math.floor(this.getDynamicSpawnCount() * Math.max(0.2, this.scheduleRushBurstScale)));
         director.getScene().emit(
@@ -447,6 +509,7 @@ export class level extends Component {
     }
 
     private triggerProjectReview() {
+        this.statEventsTriggered += 1;
         const pressureBonus = Math.floor(Math.max(0, this.getBattlePressureProgress()) * 0.45);
         const reviewWaveCount = Math.max(3, Math.floor(this.projectReviewWaveCount + pressureBonus));
         const spawnCount = this.spawnProjectReviewWave(reviewWaveCount);
@@ -477,6 +540,7 @@ export class level extends Component {
     }
 
     private triggerIncidentWave() {
+        this.statEventsTriggered += 1;
         const pressureBonus = Math.floor(Math.max(0, this.getBattlePressureProgress()) * 0.3);
         const incidentWaveCount = Math.max(3, Math.floor(this.incidentWaveCount + pressureBonus));
         const spawnCount = this.spawnIncidentWave(incidentWaveCount);
@@ -532,6 +596,7 @@ export class level extends Component {
     }
 
     private triggerDemandSurge() {
+        this.statEventsTriggered += 1;
         const baseWave = this.getDynamicSpawnCount();
         const surgeWaveCount = Math.max(4, Math.floor(baseWave * this.demandSurgeWaveScale));
         director.getScene().emit(OnOrEmitConst.OnEliteCast, 'demandSurge', null, '需求轰炸', surgeWaveCount, this.demandSurgeRepeatDelay);
@@ -794,6 +859,7 @@ export class level extends Component {
     }
 
     private onEliteKilled(_eliteKillCount: number, _expReward: number, _lootDesc: string, deathPos: Vec3) {
+        this.statEliteKills += 1;
         if (!deathPos) {
             return;
         }
@@ -989,9 +1055,36 @@ export class level extends Component {
     }
 
     private onBossKilled() {
+        this.statBossKills += 1;
         this.applyBossRushScale(1);
         this.clearBossPieTraps();
         this.bossNode = null;
+    }
+
+    /** 获取本局战斗统计数据，用于结算页展示 */
+    public getBattleStats(): {
+        elapsed: number;
+        totalKills: number;
+        eliteKills: number;
+        bossKills: number;
+        maxLevel: number;
+        eventsTriggered: number;
+    } {
+        const playerLevel = this.getPlayerLevel();
+        if (playerLevel > this.statMaxLevel) {
+            this.statMaxLevel = playerLevel;
+        }
+        // 从 PlayerTs 获取击杀数据（更准确）
+        const playerTs = MonsterManager.instance.player?.getComponent(PlayerTs);
+        const totalKills = playerTs?.getTotalKills() ?? (this.statEliteKills + this.statBossKills);
+        return {
+            elapsed: Math.floor(this.battleElapsed),
+            totalKills,
+            eliteKills: this.statEliteKills,
+            bossKills: this.statBossKills,
+            maxLevel: this.statMaxLevel,
+            eventsTriggered: this.statEventsTriggered,
+        };
     }
 
     private clearBossPieTraps() {
@@ -1001,5 +1094,311 @@ export class level extends Component {
             }
         }
         this.bossPieTraps.length = 0;
+    }
+
+    // ==================== 掉落物系统 ====================
+
+    private onNormalKill(deathPos: Vec3) {
+        if (!deathPos) {
+            return;
+        }
+        // 咖啡掉落判定
+        if (Math.random() < this.dropCoffeeChance) {
+            this.spawnDropItem('coffee', deathPos);
+        }
+        // 能量饮料掉落判定
+        else if (Math.random() < this.dropEnergyDrinkChance) {
+            this.spawnDropItem('energyDrink', deathPos);
+        }
+    }
+
+    private spawnDropItem(type: DropItemType, worldPos: Vec3) {
+        const scene = director.getScene();
+        if (!scene) {
+            return;
+        }
+        const dropNode = new Node(`Drop_${type}`);
+        scene.addChild(dropNode);
+        const spawnPos = v3(worldPos.x, worldPos.y + 0.5, worldPos.z);
+        dropNode.setWorldPosition(spawnPos);
+        EffectManager.instance.findEffectNode(EffectConst.EffDie, spawnPos);
+        this.dropItems.push({
+            node: dropNode,
+            type,
+            bornTime: game.totalTime,
+            lifeTime: this.dropLifeTime,
+            collectRadius: this.dropCollectRadius,
+            magnetRadius: this.dropMagnetRadius,
+            baseY: spawnPos.y,
+        });
+    }
+
+    private updateDropItems(deltaTime: number) {
+        if (this.dropItems.length <= 0) {
+            return;
+        }
+        const player = MonsterManager.instance.player;
+        if (!player || !player.isValid) {
+            this.clearDropItems();
+            return;
+        }
+        const playerPos = player.getWorldPosition();
+        const tempPos = v3();
+
+        for (let i = this.dropItems.length - 1; i >= 0; i--) {
+            const drop = this.dropItems[i];
+            if (!drop.node || !drop.node.isValid) {
+                this.dropItems.splice(i, 1);
+                continue;
+            }
+            const life = game.totalTime - drop.bornTime;
+            if (life > drop.lifeTime) {
+                drop.node.destroy();
+                this.dropItems.splice(i, 1);
+                continue;
+            }
+
+            drop.node.getWorldPosition(tempPos);
+            // 浮动动画
+            tempPos.y = drop.baseY + Math.sin(life * 3.5) * 0.12;
+            drop.node.setWorldPosition(tempPos);
+
+            const distance = Vec3.distance(tempPos, playerPos);
+            // 拾取
+            if (distance <= drop.collectRadius) {
+                this.collectDropItem(i);
+                continue;
+            }
+            // 磁吸
+            if (distance <= drop.magnetRadius) {
+                const step = Math.max(2.8, 7 - distance) * deltaTime;
+                const dir = v3();
+                Vec3.subtract(dir, playerPos, tempPos);
+                dir.normalize();
+                Vec3.scaleAndAdd(tempPos, tempPos, dir, step);
+                drop.node.setWorldPosition(tempPos);
+            }
+        }
+    }
+
+    private collectDropItem(index: number) {
+        const drop = this.dropItems[index];
+        if (!drop) {
+            return;
+        }
+        const playerTs = MonsterManager.instance.player?.getComponent(PlayerTs);
+        if (!playerTs) {
+            return;
+        }
+
+        switch (drop.type) {
+        case 'coffee': {
+            const maxHp = playerTs['actor']?.rungameInfo?.maxHp ?? 100;
+            const healAmount = Math.max(5, Math.floor(maxHp * this.dropCoffeeHealPercent));
+            playerTs.heal(healAmount);
+            director.getScene().emit(OnOrEmitConst.OnDropCollected, 'coffee', `咖啡续命：回复 ${healAmount} 生命`);
+            break;
+        }
+        case 'energyDrink': {
+            this.addPlayerBuff('energyDrink', this.dropEnergyDrinkDuration, this.dropEnergyDrinkAtkSpeedScale);
+            director.getScene().emit(OnOrEmitConst.OnDropCollected, 'energyDrink', `能量饮料：攻速提升 ${this.dropEnergyDrinkDuration} 秒`);
+            break;
+        }
+        }
+
+        if (drop.node && drop.node.isValid) {
+            EffectManager.instance.findEffectNode(EffectConst.EffDie, drop.node.worldPosition);
+            drop.node.destroy();
+        }
+        this.dropItems.splice(index, 1);
+    }
+
+    private clearDropItems() {
+        for (const drop of this.dropItems) {
+            if (drop.node && drop.node.isValid) {
+                drop.node.destroy();
+            }
+        }
+        this.dropItems.length = 0;
+    }
+
+    // ==================== 玩家临时 Buff ====================
+
+    private addPlayerBuff(type: string, duration: number, scale: number) {
+        // 同类型 Buff 刷新而不叠加
+        const existing = this.playerBuffs.find((b) => b.type === type);
+        if (existing) {
+            existing.remainTime = Math.max(existing.remainTime, duration);
+            existing.scale = scale;
+            return;
+        }
+        this.playerBuffs.push({ type, remainTime: duration, scale });
+        this.applyBuffEffect(type, scale, true);
+        director.getScene().emit(OnOrEmitConst.OnBuffGained, type, duration, scale);
+    }
+
+    private updatePlayerBuffs(deltaTime: number) {
+        for (let i = this.playerBuffs.length - 1; i >= 0; i--) {
+            const buff = this.playerBuffs[i];
+            buff.remainTime -= deltaTime;
+            if (buff.remainTime <= 0) {
+                this.applyBuffEffect(buff.type, buff.scale, false);
+                this.playerBuffs.splice(i, 1);
+            }
+        }
+    }
+
+    private applyBuffEffect(type: string, scale: number, isApply: boolean) {
+        const playerTs = MonsterManager.instance.player?.getComponent(PlayerTs);
+        if (!playerTs) {
+            return;
+        }
+        switch (type) {
+        case 'energyDrink':
+            // 攻击间隔乘以 scale（0.7 = 加速 30%），移除时恢复
+            if (isApply) {
+                playerTs.changeAttackInterval(-(1 - scale) * 0.3);
+            } else {
+                playerTs.changeAttackInterval((1 - scale) * 0.3);
+            }
+            break;
+        case 'techShareAtk':
+            if (isApply) {
+                playerTs.changeAttack(12);
+                playerTs.changeMoveSpeed(0.8);
+            } else {
+                playerTs.changeAttack(-12);
+                playerTs.changeMoveSpeed(-0.8);
+            }
+            break;
+        }
+    }
+
+    // ==================== 技术分享会事件 ====================
+
+    private updateTechShareState() {
+        if (this.techShareInterval <= 0) {
+            return;
+        }
+        if (this.battleElapsed < this.techShareNextTime) {
+            return;
+        }
+        this.techShareNextTime = this.battleElapsed + this.techShareInterval;
+        this.triggerTechShare();
+    }
+
+    private triggerTechShare() {
+        this.statEventsTriggered += 1;
+        const player = MonsterManager.instance.player;
+        if (!player) {
+            return;
+        }
+        const playerPos = player.getWorldPosition();
+        const scene = director.getScene();
+        if (!scene) {
+            return;
+        }
+
+        // 在玩家周围生成知识点拾取物
+        for (let i = 0; i < this.techSharePickupCount; i++) {
+            const angle = randomRange(0, Math.PI * 2);
+            const radius = randomRange(4, this.techSharePickupRadius);
+            const pickupNode = new Node(`TechSharePickup_${i}`);
+            scene.addChild(pickupNode);
+            const spawnPos = v3(
+                playerPos.x + Math.cos(angle) * radius,
+                0.5,
+                playerPos.z + Math.sin(angle) * radius,
+            );
+            pickupNode.setWorldPosition(spawnPos);
+            EffectManager.instance.findEffectNode(EffectConst.EffDie, spawnPos);
+            this.techSharePickups.push({
+                node: pickupNode,
+                type: 'coffee', // 复用类型字段，实际效果不同
+                bornTime: game.totalTime,
+                lifeTime: 20,
+                collectRadius: 2.0,
+                magnetRadius: 6.0,
+                baseY: 0.5,
+            });
+        }
+
+        director.getScene().emit(
+            OnOrEmitConst.OnEliteCast,
+            'techShare',
+            null,
+            '技术分享会',
+            this.techSharePickupCount,
+            this.techShareBuffDuration,
+        );
+    }
+
+    private updateTechSharePickups() {
+        // 在 updateDropItems 之后调用，复用类似逻辑
+        if (this.techSharePickups.length <= 0) {
+            return;
+        }
+        const player = MonsterManager.instance.player;
+        if (!player || !player.isValid) {
+            this.clearTechSharePickups();
+            return;
+        }
+        const playerPos = player.getWorldPosition();
+        const tempPos = v3();
+
+        for (let i = this.techSharePickups.length - 1; i >= 0; i--) {
+            const pickup = this.techSharePickups[i];
+            if (!pickup.node || !pickup.node.isValid) {
+                this.techSharePickups.splice(i, 1);
+                continue;
+            }
+            const life = game.totalTime - pickup.bornTime;
+            if (life > pickup.lifeTime) {
+                pickup.node.destroy();
+                this.techSharePickups.splice(i, 1);
+                continue;
+            }
+
+            pickup.node.getWorldPosition(tempPos);
+            tempPos.y = pickup.baseY + Math.sin(life * 4.5) * 0.2;
+            pickup.node.setWorldPosition(tempPos);
+
+            const distance = Vec3.distance(tempPos, playerPos);
+            if (distance <= pickup.collectRadius) {
+                this.collectTechSharePickup(i);
+                continue;
+            }
+            if (distance <= pickup.magnetRadius) {
+                const step = Math.max(3, 8 - distance) * 0.016;
+                const dir = v3();
+                Vec3.subtract(dir, playerPos, tempPos);
+                dir.normalize();
+                Vec3.scaleAndAdd(tempPos, tempPos, dir, step);
+                pickup.node.setWorldPosition(tempPos);
+            }
+        }
+    }
+
+    private collectTechSharePickup(index: number) {
+        const pickup = this.techSharePickups[index];
+        if (!pickup) {
+            return;
+        }
+        this.addPlayerBuff('techShareAtk', this.techShareBuffDuration, 1);
+        director.getScene().emit(OnOrEmitConst.OnDropCollected, 'techShare', `知识充能：攻击和移速提升 ${this.techShareBuffDuration} 秒`);
+        if (pickup.node && pickup.node.isValid) {
+            EffectManager.instance.findEffectNode(EffectConst.EffDie, pickup.node.worldPosition);
+            pickup.node.destroy();
+        }
+        this.techSharePickups.splice(index, 1);
+    }
+
+    private clearTechSharePickups() {
+        for (const pickup of this.techSharePickups) {
+            if (pickup.node && pickup.node.isValid) {
+                pickup.node.destroy();
+            }
+        }
+        this.techSharePickups.length = 0;
     }
 }

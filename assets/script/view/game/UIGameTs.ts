@@ -1,5 +1,5 @@
 
-import { _decorator, BlockInputEvents, Button, Color, Component, director, EventKeyboard, Input, input, KeyCode, Label, Node, Size, UITransform, Vec3 } from 'cc';
+import { _decorator, BlockInputEvents, Button, Color, Component, director, EventKeyboard, Graphics, Input, input, KeyCode, Label, Node, Size, UITransform, Vec3 } from 'cc';
 import { CareerRoleConfigs, CareerRoleId, CareerSpecializationOrder, CareerSpecializationUnlockLevel } from '../../const/CareerConfig';
 import { GameStateEnum } from '../../const/GameStateEnum';
 import { OnOrEmitConst } from '../../const/OnOrEmitConst';
@@ -38,10 +38,10 @@ export class UIGame extends Component {
     showRuntimeDebug = true;
 
     @property
-    upgradeAutoSelectSeconds = 12;
+    upgradeAutoSelectSeconds = 5;
 
     @property
-    specializationAutoSelectSeconds = 18;
+    specializationAutoSelectSeconds = 10;
 
     private btnSetting: Node = null;
     private dynamicButtonBindings: Array<{ node: Node; handler: () => void }> = [];
@@ -72,6 +72,7 @@ export class UIGame extends Component {
     private upgradeTitleLabel: Label = null;
     private upgradeOptionNodes: Node[] = [];
     private upgradeOptionLabels: Label[] = [];
+    private upgradeCountdownLabel: Label = null;
     private currentUpgradeOptions: UpgradeOption[] = [];
     private currentUpgradeLevel = 1;
     private upgradePanelMode: UpgradePanelMode = 'upgrade';
@@ -93,6 +94,22 @@ export class UIGame extends Component {
     private readonly menuSelectedColor = new Color(255, 228, 126, 255);
     private readonly menuOptionColor = new Color(236, 244, 255, 255);
 
+    private settlementPanel: Node = null;
+    private settlementTitleLabel: Label = null;
+    private settlementStatsLabel: Label = null;
+    private settlementRatingLabel: Label = null;
+
+    private readonly settlementTitleColor = new Color(255, 212, 96, 255);
+    private readonly settlementStatsColor = new Color(210, 232, 255, 255);
+    private readonly settlementRatingColors: Color[] = [
+        new Color(180, 180, 180, 255),  // D
+        new Color(140, 220, 255, 255),  // C
+        new Color(120, 255, 180, 255),  // B
+        new Color(255, 220, 100, 255),  // A
+        new Color(255, 160, 80, 255),   // S
+        new Color(255, 100, 100, 255),  // SS
+    ];
+
     start() {
         this.btnSetting = this.node.getChildByPath('BtnSetting');
         this.btnSetting?.on(Button.EventType.CLICK, this.onBtnSetting, this);
@@ -109,6 +126,8 @@ export class UIGame extends Component {
         scene?.on(OnOrEmitConst.OnCareerChanged, this.onCareerChanged, this);
         scene?.on(OnOrEmitConst.OnSkillPointChanged, this.onSkillPointChanged, this);
         scene?.on(OnOrEmitConst.OnRequestStartRun, this.onRequestStartRun, this);
+        scene?.on(OnOrEmitConst.OnDropCollected, this.onDropCollected, this);
+        scene?.on(OnOrEmitConst.OnBuffGained, this.onBuffGained, this);
 
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
@@ -117,6 +136,7 @@ export class UIGame extends Component {
         this.initRuntimeDebugHud();
         this.ensureStartPanels();
         this.ensureUpgradePanel();
+        this.ensureSettlementPanel();
         this.syncStartPanelsVisibility();
     }
 
@@ -135,6 +155,8 @@ export class UIGame extends Component {
         this.safeNodeOff(scene, OnOrEmitConst.OnCareerChanged, this.onCareerChanged);
         this.safeNodeOff(scene, OnOrEmitConst.OnSkillPointChanged, this.onSkillPointChanged);
         this.safeNodeOff(scene, OnOrEmitConst.OnRequestStartRun, this.onRequestStartRun);
+        this.safeNodeOff(scene, OnOrEmitConst.OnDropCollected, this.onDropCollected);
+        this.safeNodeOff(scene, OnOrEmitConst.OnBuffGained, this.onBuffGained);
 
         input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         input.off(Input.EventType.KEY_UP, this.onKeyUp, this);
@@ -162,6 +184,10 @@ export class UIGame extends Component {
 
         if (GameStateInput.isSelectingUpgrade() && this.upgradeAutoSelectRemain > 0) {
             this.upgradeAutoSelectRemain -= deltaTime;
+            if (this.upgradeCountdownLabel) {
+                const remain = Math.max(0, this.upgradeAutoSelectRemain);
+                this.upgradeCountdownLabel.string = `自动选择倒计时：${remain.toFixed(1)} 秒`;
+            }
             if (this.upgradeAutoSelectRemain <= 0 && this.currentUpgradeOptions.length > 0) {
                 this.upgradeAutoSelectRemain = 0;
                 this.showRuntimeNotify(
@@ -236,9 +262,10 @@ export class UIGame extends Component {
             this.stopGame.active = false;
         }
         if (this.gameOver) {
-            this.gameOver.active = true;
+            this.gameOver.active = false;
         }
         GameStateInput.setGameState(GameStateEnum.GameOver);
+        this.showSettlementPanel();
         director.pause();
     }
 
@@ -515,6 +542,9 @@ export class UIGame extends Component {
             this.homePanel.addComponent(UITransform).setContentSize(new Size(980, 1280));
             this.homePanel.addComponent(BlockInputEvents);
 
+            // 首页背景遮罩
+            this.drawSolidBackground(this.homePanel, new Color(10, 15, 30, 210), new Size(980, 1280));
+
             const titleNode = new Node('HomeTitle');
             titleNode.parent = this.homePanel;
             titleNode.setPosition(0, 430, 0);
@@ -557,6 +587,9 @@ export class UIGame extends Component {
             this.rolePanel.parent = this.node;
             this.rolePanel.addComponent(UITransform).setContentSize(new Size(980, 1280));
             this.rolePanel.addComponent(BlockInputEvents);
+
+            // 职业选择页背景遮罩
+            this.drawSolidBackground(this.rolePanel, new Color(10, 15, 30, 210), new Size(980, 1280));
 
             const titleNode = new Node('RoleTitle');
             titleNode.parent = this.rolePanel;
@@ -813,6 +846,10 @@ export class UIGame extends Component {
         this.upgradePanel.addComponent(BlockInputEvents);
         this.upgradePanel.active = false;
 
+        // 半透明黑色背景遮罩，让面板在 3D 场景上清晰可见
+        this.drawSolidBackground(this.upgradePanel, new Color(0, 0, 0, 180), new Size(980, 1280));
+
+        // 标题
         const titleNode = new Node('UpgradeTitle');
         titleNode.parent = this.upgradePanel;
         titleNode.setPosition(0, 470, 0);
@@ -822,22 +859,48 @@ export class UIGame extends Component {
         this.upgradeTitleLabel.lineHeight = 38;
         this.upgradeTitleLabel.color = this.menuTitleColor;
 
-        const optionY = [240, 90, -60, -210, -360, -510];
+        // 倒计时提示
+        const countdownNode = new Node('UpgradeCountdown');
+        countdownNode.parent = this.upgradePanel;
+        countdownNode.setPosition(0, 390, 0);
+        countdownNode.addComponent(UITransform).setContentSize(new Size(900, 36));
+        this.upgradeCountdownLabel = countdownNode.addComponent(Label);
+        this.upgradeCountdownLabel.fontSize = 18;
+        this.upgradeCountdownLabel.lineHeight = 24;
+        this.upgradeCountdownLabel.color = new Color(255, 200, 100, 200);
+
+        // 选项卡片（带底板背景）
+        const optionY = [280, 130, -20, -170, -320, -470];
         for (let i = 0; i < optionY.length; i++) {
             const optionNode = new Node(`UpgradeOption${i + 1}`);
             optionNode.parent = this.upgradePanel;
             optionNode.setPosition(0, optionY[i], 0);
-            optionNode.addComponent(UITransform).setContentSize(new Size(920, 120));
+            optionNode.addComponent(UITransform).setContentSize(new Size(860, 120));
             optionNode.addComponent(Button);
+
+            // 选项底板背景（深蓝半透明）
+            this.drawSolidBackground(optionNode, new Color(30, 50, 80, 200), new Size(860, 120));
+
             const label = optionNode.addComponent(Label);
-            label.fontSize = 18;
-            label.lineHeight = 24;
+            label.fontSize = 20;
+            label.lineHeight = 28;
             const clickHandler = () => this.applyUpgradeOption(i);
             optionNode.on(Button.EventType.CLICK, clickHandler, this);
             this.dynamicButtonBindings.push({ node: optionNode, handler: clickHandler });
             this.upgradeOptionNodes.push(optionNode);
             this.upgradeOptionLabels.push(label);
         }
+
+        // 底部操作提示
+        const hintNode = new Node('UpgradeHint');
+        hintNode.parent = this.upgradePanel;
+        hintNode.setPosition(0, -590, 0);
+        hintNode.addComponent(UITransform).setContentSize(new Size(860, 40));
+        const hintLabel = hintNode.addComponent(Label);
+        hintLabel.fontSize = 16;
+        hintLabel.lineHeight = 22;
+        hintLabel.color = this.menuSummaryColor;
+        hintLabel.string = '点击选项或按数字键 1-6 选择 | 超时将自动选择第一项';
     }
 
     private showUpgradePanel(mode: UpgradePanelMode, levelValue: number, options: UpgradeOption[], title: string) {
@@ -847,6 +910,9 @@ export class UIGame extends Component {
         this.currentUpgradeOptions = options;
         this.upgradeAutoSelectRemain = mode === 'specialize' ? this.specializationAutoSelectSeconds : this.upgradeAutoSelectSeconds;
         this.upgradeTitleLabel.string = title;
+        if (this.upgradeCountdownLabel) {
+            this.upgradeCountdownLabel.string = `自动选择倒计时：${this.upgradeAutoSelectRemain.toFixed(1)} 秒`;
+        }
         this.upgradePanel.active = true;
         GameStateInput.setGameState(GameStateEnum.SelectingUpgrade);
 
@@ -1230,6 +1296,9 @@ export class UIGame extends Component {
         case 'finalStand':
             this.showRuntimeNotify('Boss 进入最后阶段：加班怪潮来袭。', 2.4);
             break;
+        case 'techShare':
+            this.showRuntimeNotify(`技术分享会：${Math.max(1, Math.floor(scale))} 个知识点已出现，拾取获得临时增益！`, 3);
+            break;
         default:
             break;
         }
@@ -1271,10 +1340,209 @@ export class UIGame extends Component {
         const suffix = milestoneHint ? ` | ${milestoneHint}` : '';
         this.showRuntimeNotify(`技能点 +${gainedThisTime} | 当前 ${totalSkillPoint} | Lv.${levelValue}${suffix}`, 3);
     }
+
+    private onDropCollected(_type: string, desc: string) {
+        this.showRuntimeNotify(desc, 1.8);
+    }
+
+    private onBuffGained(type: string, duration: number) {
+        const nameMap: Record<string, string> = {
+            energyDrink: '能量饮料',
+            techShareAtk: '知识充能',
+        };
+        const name = nameMap[type] ?? type;
+        this.showRuntimeNotify(`获得增益：${name}（${duration} 秒）`, 2);
+    }
+
     private safeNodeOff(target: Node, eventName: string, handler: (...args: any[]) => void) {
         if (!target) {
             return;
         }
         target.off(eventName, handler, this);
+    }
+
+    /** 用 Graphics 在节点上绘制纯色矩形背景 */
+    private drawSolidBackground(parent: Node, color: Color, size: Size): Node {
+        const bgNode = new Node('SolidBg');
+        bgNode.parent = parent;
+        bgNode.setPosition(0, 0, 0);
+        // 确保背景在最底层
+        bgNode.setSiblingIndex(0);
+        const transform = bgNode.addComponent(UITransform);
+        transform.setContentSize(size);
+        const graphics = bgNode.addComponent(Graphics);
+        graphics.fillColor = color;
+        graphics.rect(-size.width / 2, -size.height / 2, size.width, size.height);
+        graphics.fill();
+        return bgNode;
+    }
+
+    // ==================== 结算页面 ====================
+
+    private ensureSettlementPanel() {
+        if (this.settlementPanel) {
+            return;
+        }
+        this.settlementPanel = new Node('SettlementPanel');
+        this.settlementPanel.parent = this.node;
+        this.settlementPanel.addComponent(UITransform).setContentSize(new Size(980, 1280));
+        this.settlementPanel.addComponent(BlockInputEvents);
+        this.settlementPanel.active = false;
+
+        // 结算页背景遮罩
+        this.drawSolidBackground(this.settlementPanel, new Color(5, 10, 25, 220), new Size(980, 1280));
+
+        // 标题
+        const titleNode = new Node('SettlementTitle');
+        titleNode.parent = this.settlementPanel;
+        titleNode.setPosition(0, 460, 0);
+        titleNode.addComponent(UITransform).setContentSize(new Size(900, 80));
+        this.settlementTitleLabel = titleNode.addComponent(Label);
+        this.settlementTitleLabel.fontSize = 42;
+        this.settlementTitleLabel.lineHeight = 52;
+        this.settlementTitleLabel.color = this.settlementTitleColor;
+
+        // 评级
+        const ratingNode = new Node('SettlementRating');
+        ratingNode.parent = this.settlementPanel;
+        ratingNode.setPosition(0, 340, 0);
+        ratingNode.addComponent(UITransform).setContentSize(new Size(900, 100));
+        this.settlementRatingLabel = ratingNode.addComponent(Label);
+        this.settlementRatingLabel.fontSize = 64;
+        this.settlementRatingLabel.lineHeight = 72;
+
+        // 统计信息
+        const statsNode = new Node('SettlementStats');
+        statsNode.parent = this.settlementPanel;
+        statsNode.setPosition(0, 40, 0);
+        statsNode.addComponent(UITransform).setContentSize(new Size(860, 400));
+        this.settlementStatsLabel = statsNode.addComponent(Label);
+        this.settlementStatsLabel.fontSize = 22;
+        this.settlementStatsLabel.lineHeight = 32;
+        this.settlementStatsLabel.color = this.settlementStatsColor;
+
+        // 重新开始按钮
+        this.createMenuButton(this.settlementPanel, 'SettlementRestartBtn', '重新开始', new Vec3(-160, -280, 0), () => {
+            this.hideSettlementPanel();
+            this.reloadGame();
+        }, new Size(280, 90));
+
+        // 返回首页按钮
+        this.createMenuButton(this.settlementPanel, 'SettlementHomeBtn', '返回首页', new Vec3(160, -280, 0), () => {
+            this.hideSettlementPanel();
+            this.reloadGame();
+        }, new Size(280, 90));
+
+        // 底部提示
+        const hintNode = new Node('SettlementHint');
+        hintNode.parent = this.settlementPanel;
+        hintNode.setPosition(0, -380, 0);
+        hintNode.addComponent(UITransform).setContentSize(new Size(860, 50));
+        const hintLabel = hintNode.addComponent(Label);
+        hintLabel.fontSize = 16;
+        hintLabel.lineHeight = 22;
+        hintLabel.color = this.menuSummaryColor;
+        hintLabel.string = '按 R 重新开始 | 按 Enter 返回首页';
+    }
+
+    private showSettlementPanel() {
+        this.ensureSettlementPanel();
+        const player = this.getPlayerScript();
+        const levelCtrl = this.getLevelController();
+        const stats = levelCtrl?.getBattleStats();
+
+        // 格式化时间
+        const elapsed = stats?.elapsed ?? 0;
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        const timeText = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+
+        // 获取玩家信息
+        const roleName = player?.getCareerRoleName() ?? '未知';
+        const maxLevel = stats?.maxLevel ?? (player?.getCurrentLevel() ?? 1);
+        const totalKills = stats?.totalKills ?? 0;
+        const eliteKills = stats?.eliteKills ?? 0;
+        const bossKills = stats?.bossKills ?? 0;
+        const eventsTriggered = stats?.eventsTriggered ?? 0;
+        const branchStatus = player?.getCareerBranchStatusText() ?? '';
+        const skillPoint = player?.getSkillPoint() ?? 0;
+
+        // 计算评级
+        const rating = this.calculateRating(elapsed, maxLevel, totalKills, eliteKills, bossKills);
+
+        // 设置标题
+        this.settlementTitleLabel.string = '战斗结算';
+
+        // 设置评级
+        this.settlementRatingLabel.string = rating.grade;
+        const ratingIndex = ['D', 'C', 'B', 'A', 'S', 'SS'].indexOf(rating.grade);
+        this.settlementRatingLabel.color = this.settlementRatingColors[Math.max(0, ratingIndex)] ?? this.settlementRatingColors[0];
+
+        // 设置统计信息
+        this.settlementStatsLabel.string =
+            `职业：${roleName}\n` +
+            `${branchStatus}\n` +
+            `\n` +
+            `生存时间：${timeText}\n` +
+            `最高等级：Lv.${maxLevel}\n` +
+            `总击杀数：${totalKills}\n` +
+            `精英击杀：${eliteKills}\n` +
+            `Boss 击杀：${bossKills}\n` +
+            `事件应对：${eventsTriggered} 次\n` +
+            `剩余技能点：${skillPoint}\n` +
+            `\n` +
+            `综合评分：${rating.score} 分\n` +
+            `${rating.comment}`;
+
+        this.settlementPanel.active = true;
+    }
+
+    private hideSettlementPanel() {
+        if (this.settlementPanel) {
+            this.settlementPanel.active = false;
+        }
+    }
+
+    private calculateRating(
+        elapsed: number,
+        maxLevel: number,
+        totalKills: number,
+        eliteKills: number,
+        bossKills: number,
+    ): { score: number; grade: string; comment: string } {
+        // 生存时间分（最高 30 分）
+        const timePart = Math.min(30, Math.floor(elapsed / 20));
+        // 等级分（最高 25 分）
+        const levelPart = Math.min(25, Math.floor(maxLevel * 1.2));
+        // 击杀分（最高 25 分）
+        const killPart = Math.min(25, Math.floor(totalKills / 8));
+        // 精英/Boss 加分（最高 20 分）
+        const elitePart = Math.min(20, eliteKills * 4 + bossKills * 10);
+
+        const score = timePart + levelPart + killPart + elitePart;
+
+        let grade: string;
+        let comment: string;
+        if (score >= 90) {
+            grade = 'SS';
+            comment = '传说级表现！你就是技术之神！';
+        } else if (score >= 75) {
+            grade = 'S';
+            comment = '卓越表现！堪称团队核心骨干。';
+        } else if (score >= 60) {
+            grade = 'A';
+            comment = '优秀！已经具备独当一面的能力。';
+        } else if (score >= 40) {
+            grade = 'B';
+            comment = '不错的表现，继续打磨技术栈。';
+        } else if (score >= 20) {
+            grade = 'C';
+            comment = '还需要更多实战经验，加油！';
+        } else {
+            grade = 'D';
+            comment = '刚入行的菜鸟，多练练吧。';
+        }
+
+        return { score, grade, comment };
     }
 }
