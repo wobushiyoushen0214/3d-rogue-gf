@@ -52,6 +52,10 @@ export class Monster extends Component {
     isElite = false;
     isBoss = false;
     runtimeMoveSpeedScale = 1;
+    isCodeReviewMarked = false;
+    codeReviewExpMultiplier = 1;
+    isTechDebt = false;
+    isReqChange = false;
 
     private readonly restoreMaterialState = () => {
         for (let i = 0; i < this.messhNodes.length; i++) {
@@ -289,7 +293,11 @@ export class Monster extends Component {
         if (this.rungameInfo.Hp <= 0) {
             const deathPos = v3(this.node.worldPosition.x, this.node.worldPosition.y, this.node.worldPosition.z);
             this.onDie();
-            const expReward = this.isBoss ? 25 : (this.isElite ? 8 : 1);
+            let expReward = this.isBoss ? 25 : (this.isElite ? 8 : 1);
+            if (this.isCodeReviewMarked) {
+                expReward = Math.floor(expReward * this.codeReviewExpMultiplier);
+                this.isCodeReviewMarked = false;
+            }
             if (hurtSrc && hurtSrc.isValid) {
                 hurtSrc.emit(OnOrEmitConst.OnKill, this.node, expReward, this.isElite, this.isBoss, deathPos);
             }

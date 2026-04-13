@@ -6,7 +6,12 @@
       "Bash(npx tsc:*)",
       "Bash(node --experimental-transform-types --check assets/script/view/game/UIGameTs.ts)",
       "Bash(node --experimental-transform-types --check assets/script/view/game/level.ts)",
-      "Bash(node --experimental-transform-types --check assets/script/view/game/PlayerTs.ts)"
+      "Bash(node --experimental-transform-types --check assets/script/view/game/PlayerTs.ts)",
+      "Bash(/tmp/codebase_analysis.md:*)",
+      "Read(//tmp/**)",
+      "mcp__ide__getDiagnostics",
+      "Bash(python3:*)",
+      "Bash(grep -r ecbe78+myhMw4jiUfWPuZ6o /Users/lizhiwei/localProj/3d-rogue-gf/assets --include=*.meta -l)"
     ]
   }
 }

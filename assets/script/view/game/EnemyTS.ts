@@ -91,6 +91,12 @@ export class EnemyTS extends Component {
     private eliteLastDashTime = 0;
     private eliteDashBaseMoveSpeed = 0;
 
+    // 需求变更单 S 形走位
+    private reqChangeZigzagInterval = 1.8;
+    private reqChangeZigzagAngle = 55;
+    private reqChangeZigzagTimer = 0;
+    private reqChangeZigzagSign = 1;
+
     start() {
 
         this.monster = this.node.getComponent(Monster);
@@ -99,6 +105,8 @@ export class EnemyTS extends Component {
         const level = LevelConfig.getLevel();
         this.eliteBurdenScale = level?.EliteBurdenScale ?? this.eliteBurdenScale;
         this.eliteBurdenDuration = level?.EliteBurdenDuration ?? this.eliteBurdenDuration;
+        this.reqChangeZigzagInterval = level?.ReqChangeZigzagInterval ?? this.reqChangeZigzagInterval;
+        this.reqChangeZigzagAngle = level?.ReqChangeZigzagAngle ?? this.reqChangeZigzagAngle;
 
         this.node.on("onFrameAttack", this.onFrameAttack, this);
         this.schedule(this.excuteSAI, 1, macro.REPEAT_FOREVER, 1.0);
@@ -114,6 +122,8 @@ export class EnemyTS extends Component {
         this.eliteDashRemainTime = 0;
         this.eliteLastDashTime = 0;
         this.eliteDashBaseMoveSpeed = 0;
+        this.reqChangeZigzagTimer = 0;
+        this.reqChangeZigzagSign = 1;
     }
 
     onDestroy() {
@@ -125,7 +135,20 @@ export class EnemyTS extends Component {
         if (!GameStateInput.canUpdateWorld()){
             return;
         }
-        if (!this.monster || !this.monster.isElite){
+        if (!this.monster){
+            return;
+        }
+
+        // 需求变更单 S 形走位计时
+        if (this.monster.isReqChange && this.monster.currState !== ActorState.Die){
+            this.reqChangeZigzagTimer += deltaTime;
+            if (this.reqChangeZigzagTimer >= this.reqChangeZigzagInterval){
+                this.reqChangeZigzagTimer = 0;
+                this.reqChangeZigzagSign *= -1;
+            }
+        }
+
+        if (!this.monster.isElite){
             return;
         }
         if (this.eliteDashRemainTime <= 0){
@@ -313,6 +336,19 @@ export class EnemyTS extends Component {
         Vec3.subtract(this.monster.input, target.worldPosition, this.node.worldPosition);
         this.monster.input.y = 0;
         this.monster.input.normalize();
+
+        // 需求变更单：在追踪方向上叠加 S 形偏移
+        if (this.monster.isReqChange && this.eliteDashRemainTime <= 0){
+            const zigzagRad = math.toRadian(this.reqChangeZigzagAngle * this.reqChangeZigzagSign);
+            const cosA = Math.cos(zigzagRad);
+            const sinA = Math.sin(zigzagRad);
+            const ox = this.monster.input.x;
+            const oz = this.monster.input.z;
+            this.monster.input.x = ox * cosA - oz * sinA;
+            this.monster.input.z = ox * sinA + oz * cosA;
+            this.monster.input.normalize();
+        }
+
         this.monster.changeState(ActorState.Run);
     }
 

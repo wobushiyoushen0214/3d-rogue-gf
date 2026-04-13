@@ -120,4 +120,29 @@ export enum OnOrEmitConst{
       * 玩家获得临时 Buff
       */
      OnBuffGained = "OnBuffGained",
+
+     /**
+      * 代码 Review 标记怪物被击杀
+      */
+     OnCodeReviewKill = "OnCodeReviewKill",
+
+     /**
+      * 技术债利息光环叠层
+      */
+     OnTechDebtAuraStack = "OnTechDebtAuraStack",
+
+     /**
+      * 主动技能解锁
+      */
+     OnActiveSkillUnlocked = "OnActiveSkillUnlocked",
+
+     /**
+      * 主动技能释放
+      */
+     OnActiveSkillCast = "OnActiveSkillCast",
+
+     /**
+      * 主动技能冷却完成
+      */
+     OnActiveSkillReady = "OnActiveSkillReady",
 }

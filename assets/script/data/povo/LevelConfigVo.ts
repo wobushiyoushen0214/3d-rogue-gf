@@ -459,6 +459,57 @@ export class LevelConfigVo {
      * BossFinalStandWaveScale(再坚持一下阶段召唤波次系数)
      */
     BossFinalStandWaveScale?: number;
+
+    /** TechDebtUnlockTime(技术债利息首次出现时间 秒) */
+    TechDebtUnlockTime?: number;
+    /** TechDebtSpawnInterval(技术债利息刷新间隔 秒) */
+    TechDebtSpawnInterval?: number;
+    /** TechDebtScaleMin(技术债利息缩放最小值) */
+    TechDebtScaleMin?: number;
+    /** TechDebtScaleMax(技术债利息缩放最大值) */
+    TechDebtScaleMax?: number;
+    /** TechDebtHPMultiplier(技术债利息血量倍率) */
+    TechDebtHPMultiplier?: number;
+    /** TechDebtAttackMultiplier(技术债利息攻击倍率) */
+    TechDebtAttackMultiplier?: number;
+    /** TechDebtMoveSpeedMultiplier(技术债利息移速倍率) */
+    TechDebtMoveSpeedMultiplier?: number;
+    /** TechDebtAuraInterval(技术债利息光环叠层间隔 秒) */
+    TechDebtAuraInterval?: number;
+    /** TechDebtAuraAttackBonus(技术债利息每层光环全场攻击增量) */
+    TechDebtAuraAttackBonus?: number;
+    /** TechDebtAuraMaxStacks(技术债利息光环最大叠层数) */
+    TechDebtAuraMaxStacks?: number;
+
+    /** CodeReviewUnlockTime(代码 Review 首次触发时间 秒) */
+    CodeReviewUnlockTime?: number;
+    /** CodeReviewInterval(代码 Review 触发间隔 秒) */
+    CodeReviewInterval?: number;
+    /** CodeReviewMarkCount(代码 Review 标记怪物数量) */
+    CodeReviewMarkCount?: number;
+    /** CodeReviewExpMultiplier(代码 Review 标记怪物经验倍率) */
+    CodeReviewExpMultiplier?: number;
+    /** CodeReviewMarkDuration(代码 Review 标记持续时间 秒) */
+    CodeReviewMarkDuration?: number;
+
+    /** ReqChangeUnlockTime(需求变更单首次出现时间 秒) */
+    ReqChangeUnlockTime?: number;
+    /** ReqChangeSpawnInterval(需求变更单刷新间隔 秒) */
+    ReqChangeSpawnInterval?: number;
+    /** ReqChangeScaleMin(需求变更单缩放最小值) */
+    ReqChangeScaleMin?: number;
+    /** ReqChangeScaleMax(需求变更单缩放最大值) */
+    ReqChangeScaleMax?: number;
+    /** ReqChangeHPMultiplier(需求变更单血量倍率) */
+    ReqChangeHPMultiplier?: number;
+    /** ReqChangeAttackMultiplier(需求变更单攻击倍率) */
+    ReqChangeAttackMultiplier?: number;
+    /** ReqChangeMoveSpeedMultiplier(需求变更单移速倍率) */
+    ReqChangeMoveSpeedMultiplier?: number;
+    /** ReqChangeZigzagInterval(需求变更单变向间隔 秒) */
+    ReqChangeZigzagInterval?: number;
+    /** ReqChangeZigzagAngle(需求变更单变向角度 度) */
+    ReqChangeZigzagAngle?: number;
 }
 
 

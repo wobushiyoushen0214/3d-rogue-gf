@@ -21,6 +21,26 @@ export type CareerTechBranchConfig = {
     milestones: CareerTechMilestoneConfig[];
 };
 
+// 主动技能配置
+export type ActiveSkillConfig = {
+    id: string;
+    name: string;
+    desc: string;
+    cooldown: number;
+    duration: number;
+    unlockSkillPointCost: number;
+};
+
+export const CareerActiveSkillConfigs: Record<CareerRoleId, ActiveSkillConfig | null> = {
+    student: null,
+    frontend: { id: 'frontend-hotReload', name: '热更新', desc: '5 秒内攻速翻倍，子弹 +2', cooldown: 25, duration: 5, unlockSkillPointCost: 2 },
+    backend: { id: 'backend-stressTest', name: '全链路压测', desc: '下 3 发穿透无限，伤害 x2.5', cooldown: 30, duration: 6, unlockSkillPointCost: 2 },
+    product: { id: 'product-reqFreeze', name: '需求冻结', desc: '全场怪物定身 3 秒，受伤 +30%', cooldown: 28, duration: 3, unlockSkillPointCost: 2 },
+    project: { id: 'project-riskPlan', name: '风险预案', desc: '8 秒内减伤 60%，移速 +30%', cooldown: 22, duration: 8, unlockSkillPointCost: 2 },
+    qa: { id: 'qa-fullRegression', name: '全量回归', desc: '对屏幕内所有怪物造成攻击力 x3 伤害', cooldown: 30, duration: 0.5, unlockSkillPointCost: 2 },
+    delivery: { id: 'delivery-firefight', name: '现场救火', desc: '回复 40% 最大生命，5 秒无敌', cooldown: 35, duration: 5, unlockSkillPointCost: 2 },
+};
+
 export const CareerTechTreeConfigs: Record<CareerRoleId, CareerTechBranchConfig[]> = {
     student: [],
     frontend: [

@@ -14,7 +14,7 @@ import { MathUtil } from '../../utils/MathUtil';
 import { GameStateInput } from '../../data/dynamicData/GameStateInput';
 import { LevelConfigVo } from '../../data/povo/LevelConfigVo';
 import { CareerRoleConfig, CareerRoleConfigs, CareerRoleId, CareerRolePerks, CareerSpecializationUnlockLevel } from '../../const/CareerConfig';
-import { CareerBranchId, CareerTechBranchConfig, CareerTechTreeConfigs, findCareerTechBranch, findCareerTechMilestone } from '../../const/TechTreeConfig';
+import { ActiveSkillConfig, CareerActiveSkillConfigs, CareerBranchId, CareerTechBranchConfig, CareerTechTreeConfigs, findCareerTechBranch, findCareerTechMilestone } from '../../const/TechTreeConfig';
 
 const { ccclass, property} = _decorator;
 const tempShootStart = v3();
@@ -69,6 +69,17 @@ export class PlayerTs extends Component {
     private careerBranchPoints: Record<string, number> = {};
     private careerMilestones: Record<string, number> = {};
 
+    // 主动技能系统
+    private activeSkillUnlocked = false;
+    private activeSkillConfig: ActiveSkillConfig | null = null;
+    private activeSkillCooldownRemain = 0;
+    private activeSkillDurationRemain = 0;
+    private activeSkillActive = false;
+    // 后端压测：剩余强化弹数
+    private stressTestShotsRemain = 0;
+    // 实施救火：无敌状态
+    private firefightInvincible = false;
+
     private eliteDrops: EliteDropInfo[] = [];
     private eliteDropCollectRadius = 1.8;
     private eliteDropMagnetRadius = 6.0;
@@ -113,6 +124,7 @@ export class PlayerTs extends Component {
         if (this.careerHitHealCooldown > 0){
             this.careerHitHealCooldown -= deltaTime;
         }
+        this.updateActiveSkill(deltaTime);
 
         this.actor.input.x = VirtualInput.horizontal;
         this.actor.input.z = -VirtualInput.vertical;
@@ -729,6 +741,10 @@ export class PlayerTs extends Component {
 
     adjustOutgoingDamage(damage: number, monster: Monster, projectile: ProjectileManager | null = null): number{
         let result = damage * (projectile?.projectileProperty?.damageScale ?? 1);
+        // 需求冻结主动技能：定身期间受伤 +30%
+        if (this.isReqFreezeActive()){
+            result *= 1.3;
+        }
         switch (this.careerRoleId){
         case 'backend':
             result *= monster?.isBoss || monster?.isElite ? 1.35 : 1.08;
@@ -761,7 +777,15 @@ export class PlayerTs extends Component {
     }
 
     adjustIncomingDamage(damage: number): number{
+        // 实施救火无敌
+        if (this.firefightInvincible){
+            return 0;
+        }
         let scale = 1;
+        // 风险预案主动技能减伤
+        if (this.isRiskPlanActive()){
+            scale *= 0.4;
+        }
         switch (this.careerRoleId){
         case 'project':
             scale = this.hasCareerMilestone('project-risk-4') ? 0.76 : 0.85;
@@ -941,6 +965,7 @@ export class PlayerTs extends Component {
                 director.getScene().emit(OnOrEmitConst.OnSkillPointChanged, property.skillPoint, gainedSkillPoint, property.level);
             }
             this.node.emit(OnOrEmitConst.OnplayerUpgrade, property.level, this, gainedSkillPoint, property.skillPoint);
+            console.log(`[PlayerTs] emit OnplayerUpgrade Lv.${property.level}, sp=${property.skillPoint}`);
         }
         this.node.emit(OnOrEmitConst.OnExpGain, property.exp, property.maxExp, this);
     }
@@ -1054,6 +1079,16 @@ export class PlayerTs extends Component {
         projectile.projectileProperty.damageScale = isCareerExtraShot ? 0.58 : 1;
         projectile.projectileProperty.careerProcTag = '';
 
+        // 后端全链路压测主动技能
+        if (this.stressTestShotsRemain > 0 && !isCareerExtraShot){
+            this.consumeStressTestShot();
+            projectile.projectileProperty.penetration = 99;
+            projectile.projectileProperty.damageScale = 2.5;
+            projectile.projectileProperty.lifeTime = 5.0;
+            projectile.projectileProperty.careerProcTag = 'stressTest';
+            return;
+        }
+
         switch (this.careerRoleId){
         case 'backend':
             projectile.projectileProperty.penetration += 1;
@@ -1131,6 +1166,7 @@ export class PlayerTs extends Component {
         this.careerMilestones = {};
         this.actor.rungameInfo.careerBranchId = '';
         this.actor.rungameInfo.careerBranchName = '';
+        this.resetActiveSkillState();
     }
 
     private applyCareerPerks(perks: CareerRolePerks){
@@ -1160,6 +1196,247 @@ export class PlayerTs extends Component {
         if (typeof perks.trace === 'boolean'){
             this.setProjectileTraceEnabled(perks.trace);
         }
+    }
+
+    // ==================== 主动技能系统 ====================
+
+    getActiveSkillConfig(): ActiveSkillConfig | null{
+        return this.activeSkillConfig;
+    }
+
+    isActiveSkillUnlocked(): boolean{
+        return this.activeSkillUnlocked;
+    }
+
+    isActiveSkillActive(): boolean{
+        return this.activeSkillActive;
+    }
+
+    getActiveSkillCooldownRemain(): number{
+        return Math.max(0, this.activeSkillCooldownRemain);
+    }
+
+    getActiveSkillDurationRemain(): number{
+        return Math.max(0, this.activeSkillDurationRemain);
+    }
+
+    canUnlockActiveSkill(): boolean{
+        if (this.activeSkillUnlocked || this.careerRoleId === 'student'){
+            return false;
+        }
+        const config = CareerActiveSkillConfigs[this.careerRoleId];
+        if (!config){
+            return false;
+        }
+        return this.getSkillPoint() >= config.unlockSkillPointCost;
+    }
+
+    unlockActiveSkill(): boolean{
+        if (!this.canUnlockActiveSkill()){
+            return false;
+        }
+        const config = CareerActiveSkillConfigs[this.careerRoleId];
+        if (!config){
+            return false;
+        }
+        this.actor.rungameInfo.skillPoint = Math.max(0, this.actor.rungameInfo.skillPoint - config.unlockSkillPointCost);
+        this.activeSkillUnlocked = true;
+        this.activeSkillConfig = config;
+        this.activeSkillCooldownRemain = 0;
+        this.activeSkillDurationRemain = 0;
+        this.activeSkillActive = false;
+        director.getScene().emit(OnOrEmitConst.OnSkillPointChanged, this.actor.rungameInfo.skillPoint, 0, this.getCurrentLevel());
+        director.getScene().emit(OnOrEmitConst.OnActiveSkillUnlocked, config.id, config.name, config.desc);
+        return true;
+    }
+
+    canCastActiveSkill(): boolean{
+        return this.activeSkillUnlocked && !this.activeSkillActive && this.activeSkillCooldownRemain <= 0;
+    }
+
+    castActiveSkill(): boolean{
+        if (!this.canCastActiveSkill() || !this.activeSkillConfig){
+            return false;
+        }
+        this.activeSkillActive = true;
+        this.activeSkillDurationRemain = this.activeSkillConfig.duration;
+        this.activeSkillCooldownRemain = this.activeSkillConfig.cooldown;
+        this.applyActiveSkillStart();
+        director.getScene().emit(
+            OnOrEmitConst.OnActiveSkillCast,
+            this.activeSkillConfig.id,
+            this.activeSkillConfig.name,
+            this.activeSkillConfig.duration,
+            this.activeSkillConfig.cooldown,
+        );
+        return true;
+    }
+
+    private updateActiveSkill(deltaTime: number){
+        if (!this.activeSkillUnlocked || !this.activeSkillConfig){
+            return;
+        }
+        if (this.activeSkillActive){
+            this.activeSkillDurationRemain -= deltaTime;
+            if (this.activeSkillDurationRemain <= 0){
+                this.activeSkillDurationRemain = 0;
+                this.activeSkillActive = false;
+                this.applyActiveSkillEnd();
+            }
+        }
+        if (this.activeSkillCooldownRemain > 0){
+            this.activeSkillCooldownRemain -= deltaTime;
+            if (this.activeSkillCooldownRemain <= 0){
+                this.activeSkillCooldownRemain = 0;
+                director.getScene().emit(OnOrEmitConst.OnActiveSkillReady, this.activeSkillConfig.id, this.activeSkillConfig.name);
+            }
+        }
+    }
+
+    private applyActiveSkillStart(){
+        if (!this.activeSkillConfig){
+            return;
+        }
+        switch (this.activeSkillConfig.id){
+        case 'frontend-hotReload':
+            // 攻速翻倍（攻击间隔减半），子弹 +2
+            this.changeAttackInterval(-this.actor.rungameInfo.attackInterval * 0.5);
+            this.changeProjectileCount(2);
+            break;
+        case 'backend-stressTest':
+            // 下 3 发穿透无限，伤害 x2.5
+            this.stressTestShotsRemain = 3;
+            break;
+        case 'product-reqFreeze':
+            // 全场怪物定身 3 秒 —— 通过设置所有怪物移速为 0 实现
+            this.freezeAllMonsters(true);
+            break;
+        case 'project-riskPlan':
+            // 8 秒内减伤 60%，移速 +30%
+            this.changeMoveSpeed(this.actor.rungameInfo.moveSpeed * 0.3);
+            break;
+        case 'qa-fullRegression':
+            // 对屏幕内所有怪物造成攻击力 x3 伤害
+            this.dealAoeDamage(this.actor.rungameInfo.attack * 3);
+            break;
+        case 'delivery-firefight':
+            // 回复 40% 最大生命，5 秒无敌
+            this.heal(Math.floor(this.actor.rungameInfo.maxHp * 0.4));
+            this.firefightInvincible = true;
+            break;
+        }
+    }
+
+    private applyActiveSkillEnd(){
+        if (!this.activeSkillConfig){
+            return;
+        }
+        switch (this.activeSkillConfig.id){
+        case 'frontend-hotReload':
+            // 恢复攻速和子弹
+            this.changeAttackInterval(this.actor.rungameInfo.attackInterval);
+            this.changeProjectileCount(-2);
+            break;
+        case 'backend-stressTest':
+            this.stressTestShotsRemain = 0;
+            break;
+        case 'product-reqFreeze':
+            this.freezeAllMonsters(false);
+            break;
+        case 'project-riskPlan':
+            this.changeMoveSpeed(-this.actor.rungameInfo.moveSpeed * 0.23);
+            break;
+        case 'qa-fullRegression':
+            // 瞬发技能，无需恢复
+            break;
+        case 'delivery-firefight':
+            this.firefightInvincible = false;
+            break;
+        }
+    }
+
+    isInvincible(): boolean{
+        return this.firefightInvincible;
+    }
+
+    isStressTestActive(): boolean{
+        return this.stressTestShotsRemain > 0;
+    }
+
+    consumeStressTestShot(): boolean{
+        if (this.stressTestShotsRemain <= 0){
+            return false;
+        }
+        this.stressTestShotsRemain -= 1;
+        return true;
+    }
+
+    isReqFreezeActive(): boolean{
+        return this.activeSkillActive && this.activeSkillConfig?.id === 'product-reqFreeze';
+    }
+
+    isRiskPlanActive(): boolean{
+        return this.activeSkillActive && this.activeSkillConfig?.id === 'project-riskPlan';
+    }
+
+    private freezeAllMonsters(freeze: boolean){
+        const entries = MonsterManager.instance.goalvoes;
+        if (!entries){
+            return;
+        }
+        for (const goalId of entries.keys()){
+            const entry = entries.get(goalId);
+            const monster = entry?.mSphere?.getComponent(Monster);
+            if (!monster){
+                continue;
+            }
+            if (freeze){
+                monster.runtimeMoveSpeedScale = 0;
+            } else {
+                monster.runtimeMoveSpeedScale = 1;
+            }
+        }
+    }
+
+    private dealAoeDamage(damage: number){
+        const entries = MonsterManager.instance.goalvoes;
+        if (!entries){
+            return;
+        }
+        const playerPos = this.node.getWorldPosition();
+        const maxRange = 30;
+        for (const goalId of entries.keys()){
+            const entry = entries.get(goalId);
+            const node = entry?.mSphere;
+            if (!node || !node.isValid || !node.activeInHierarchy){
+                continue;
+            }
+            const monster = node.getComponent(Monster);
+            if (!monster || monster.currState === ActorState.Die){
+                continue;
+            }
+            const dist = Vec3.distance(node.worldPosition, playerPos);
+            if (dist > maxRange){
+                continue;
+            }
+            const hurtDir = v3();
+            Vec3.subtract(hurtDir, node.worldPosition, playerPos);
+            hurtDir.normalize();
+            monster.hurt(damage, hurtDir, this.node);
+        }
+    }
+
+    private resetActiveSkillState(){
+        if (this.activeSkillActive){
+            this.applyActiveSkillEnd();
+        }
+        this.activeSkillUnlocked = false;
+        this.activeSkillConfig = null;
+        this.activeSkillCooldownRemain = 0;
+        this.activeSkillDurationRemain = 0;
+        this.activeSkillActive = false;
+        this.stressTestShotsRemain = 0;
+        this.firefightInvincible = false;
     }
 }
 

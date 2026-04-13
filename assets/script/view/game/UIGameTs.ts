@@ -1,9 +1,9 @@
 
-import { _decorator, BlockInputEvents, Button, Color, Component, director, EventKeyboard, Graphics, Input, input, KeyCode, Label, Node, Size, UITransform, Vec3 } from 'cc';
+import { _decorator, BlockInputEvents, Button, Color, Component, director, EventKeyboard, Graphics, Input, input, KeyCode, Label, Layers, Node, Size, UITransform, Vec3 } from 'cc';
 import { CareerRoleConfigs, CareerRoleId, CareerSpecializationOrder, CareerSpecializationUnlockLevel } from '../../const/CareerConfig';
 import { GameStateEnum } from '../../const/GameStateEnum';
 import { OnOrEmitConst } from '../../const/OnOrEmitConst';
-import { CareerBranchId, CareerMilestoneId, CareerTechBranchConfig, CareerTechTreeConfigs } from '../../const/TechTreeConfig';
+import { CareerBranchId, CareerMilestoneId, CareerTechBranchConfig, CareerTechTreeConfigs, CareerActiveSkillConfigs } from '../../const/TechTreeConfig';
 import { GameStateInput } from '../../data/dynamicData/GameStateInput';
 import { VirtualInput } from '../../data/dynamicData/VirtualInput';
 import { MonsterManager } from '../../managerGame/MonsterManager';
@@ -38,10 +38,10 @@ export class UIGame extends Component {
     showRuntimeDebug = true;
 
     @property
-    upgradeAutoSelectSeconds = 5;
+    upgradeAutoSelectSeconds = 8;
 
     @property
-    specializationAutoSelectSeconds = 10;
+    specializationAutoSelectSeconds = 12;
 
     private btnSetting: Node = null;
     private dynamicButtonBindings: Array<{ node: Node; handler: () => void }> = [];
@@ -128,6 +128,10 @@ export class UIGame extends Component {
         scene?.on(OnOrEmitConst.OnRequestStartRun, this.onRequestStartRun, this);
         scene?.on(OnOrEmitConst.OnDropCollected, this.onDropCollected, this);
         scene?.on(OnOrEmitConst.OnBuffGained, this.onBuffGained, this);
+        scene?.on(OnOrEmitConst.OnActiveSkillCast, this.onActiveSkillCast, this);
+        scene?.on(OnOrEmitConst.OnActiveSkillReady, this.onActiveSkillReady, this);
+        scene?.on(OnOrEmitConst.OnActiveSkillUnlocked, this.onActiveSkillUnlocked, this);
+        scene?.on(OnOrEmitConst.OnTechDebtAuraStack, this.onTechDebtAuraStack, this);
 
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
@@ -157,6 +161,10 @@ export class UIGame extends Component {
         this.safeNodeOff(scene, OnOrEmitConst.OnRequestStartRun, this.onRequestStartRun);
         this.safeNodeOff(scene, OnOrEmitConst.OnDropCollected, this.onDropCollected);
         this.safeNodeOff(scene, OnOrEmitConst.OnBuffGained, this.onBuffGained);
+        this.safeNodeOff(scene, OnOrEmitConst.OnActiveSkillCast, this.onActiveSkillCast);
+        this.safeNodeOff(scene, OnOrEmitConst.OnActiveSkillReady, this.onActiveSkillReady);
+        this.safeNodeOff(scene, OnOrEmitConst.OnActiveSkillUnlocked, this.onActiveSkillUnlocked);
+        this.safeNodeOff(scene, OnOrEmitConst.OnTechDebtAuraStack, this.onTechDebtAuraStack);
 
         input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         input.off(Input.EventType.KEY_UP, this.onKeyUp, this);
@@ -200,6 +208,18 @@ export class UIGame extends Component {
             }
         }
 
+        // 安全兜底：如果处于 SelectingUpgrade 但面板不可见且没有选项，强制恢复 Running
+        if (GameStateInput.isSelectingUpgrade() && (!this.upgradePanel?.active || this.currentUpgradeOptions.length <= 0)) {
+            console.warn(`[UIGame] safety fallback: SelectingUpgrade but panel=${this.upgradePanel?.active}, options=${this.currentUpgradeOptions.length}, forcing Running`);
+            if (this.upgradePanel) {
+                this.upgradePanel.active = false;
+            }
+            this.currentUpgradeOptions = [];
+            this.upgradeAutoSelectRemain = 0;
+            this.pendingUpgradeLevels.length = 0;
+            GameStateInput.setGameState(GameStateEnum.Running);
+        }
+
         if (this.runtimeNotifyLabel && this.runtimeNotifyLabel.node.active) {
             this.runtimeNotifyTimer -= deltaTime;
             if (this.runtimeNotifyTimer <= 0) {
@@ -224,13 +244,15 @@ export class UIGame extends Component {
         const agents = Simulator.instance.getNumAgents();
         const obstacles = Simulator.instance.getObstacles().length;
         const playerInfo = this.getPlayerScript()?.getDebugSummary() ?? 'no-player';
+        const activeSkillInfo = this.getActiveSkillHudText();
         this.runtimeDebugLabel.string =
             `状态：${stateName}\n` +
             `帧率：${this.fpsValue.toFixed(1)}\n` +
             `怪物/代理：${monsters}/${agents}\n` +
             `障碍：${obstacles}\n` +
             `玩家：${playerInfo}\n` +
-            `调试键：1/2/3/4/5/6/0`;
+            `${activeSkillInfo}` +
+            `调试键：1/2/3/4/5/6/0 | Q=技能`;
     }
 
     onBtnSetting() {
@@ -321,6 +343,28 @@ export class UIGame extends Component {
         return MonsterManager.instance.player?.getComponent(PlayerTs) ?? null;
     }
 
+    private getActiveSkillHudText(): string {
+        const player = this.getPlayerScript();
+        if (!player) {
+            return '';
+        }
+        const config = player.getActiveSkillConfig();
+        if (!config) {
+            if (player.canUnlockActiveSkill()) {
+                return '技能：可解锁（升级时选择）\n';
+            }
+            return player.isSpecialized() ? '技能：未解锁\n' : '';
+        }
+        if (player.isActiveSkillActive()) {
+            return `技能：${config.name} 生效中（${player.getActiveSkillDurationRemain().toFixed(1)}s）\n`;
+        }
+        const cd = player.getActiveSkillCooldownRemain();
+        if (cd > 0) {
+            return `技能：${config.name} 冷却中（${cd.toFixed(1)}s）| Q 释放\n`;
+        }
+        return `技能：${config.name} 就绪 | Q 释放\n`;
+    }
+
     private logDebugSummary(action: string) {
         const player = this.getPlayerScript();
         if (!player) {
@@ -392,6 +436,24 @@ export class UIGame extends Component {
             return;
         }
         if (!GameStateInput.canUpdateWorld()) {
+            return;
+        }
+
+        // Q 键释放主动技能
+        if (event.keyCode === KeyCode.KEY_Q) {
+            const player = this.getPlayerScript();
+            if (player) {
+                if (player.canCastActiveSkill()) {
+                    player.castActiveSkill();
+                } else if (player.isActiveSkillUnlocked()) {
+                    const cd = player.getActiveSkillCooldownRemain();
+                    if (cd > 0) {
+                        this.showRuntimeNotify(`技能冷却中：${cd.toFixed(1)} 秒`, 1);
+                    } else if (player.isActiveSkillActive()) {
+                        this.showRuntimeNotify('技能生效中', 0.8);
+                    }
+                }
+            }
             return;
         }
 
@@ -537,7 +599,7 @@ export class UIGame extends Component {
     }
     private ensureStartPanels() {
         if (!this.homePanel) {
-            this.homePanel = new Node('HomePanel');
+            this.homePanel = this.createUINode('HomePanel');
             this.homePanel.parent = this.node;
             this.homePanel.addComponent(UITransform).setContentSize(new Size(980, 1280));
             this.homePanel.addComponent(BlockInputEvents);
@@ -545,7 +607,7 @@ export class UIGame extends Component {
             // 首页背景遮罩
             this.drawSolidBackground(this.homePanel, new Color(10, 15, 30, 210), new Size(980, 1280));
 
-            const titleNode = new Node('HomeTitle');
+            const titleNode = this.createUINode('HomeTitle');
             titleNode.parent = this.homePanel;
             titleNode.setPosition(0, 430, 0);
             titleNode.addComponent(UITransform).setContentSize(new Size(900, 120));
@@ -555,7 +617,7 @@ export class UIGame extends Component {
             titleLabel.color = this.menuTitleColor;
             titleLabel.string = 'IT Career Rogue\n技术人生生存战';
 
-            const summaryNode = new Node('HomeSummary');
+            const summaryNode = this.createUINode('HomeSummary');
             summaryNode.parent = this.homePanel;
             summaryNode.setPosition(0, 190, 0);
             summaryNode.addComponent(UITransform).setContentSize(new Size(860, 220));
@@ -571,7 +633,7 @@ export class UIGame extends Component {
                 this.openRolePanel();
             });
 
-            const hintNode = new Node('HomeHint');
+            const hintNode = this.createUINode('HomeHint');
             hintNode.parent = this.homePanel;
             hintNode.setPosition(0, -330, 0);
             hintNode.addComponent(UITransform).setContentSize(new Size(860, 80));
@@ -583,7 +645,7 @@ export class UIGame extends Component {
         }
 
         if (!this.rolePanel) {
-            this.rolePanel = new Node('RolePanel');
+            this.rolePanel = this.createUINode('RolePanel');
             this.rolePanel.parent = this.node;
             this.rolePanel.addComponent(UITransform).setContentSize(new Size(980, 1280));
             this.rolePanel.addComponent(BlockInputEvents);
@@ -591,7 +653,7 @@ export class UIGame extends Component {
             // 职业选择页背景遮罩
             this.drawSolidBackground(this.rolePanel, new Color(10, 15, 30, 210), new Size(980, 1280));
 
-            const titleNode = new Node('RoleTitle');
+            const titleNode = this.createUINode('RoleTitle');
             titleNode.parent = this.rolePanel;
             titleNode.setPosition(0, 500, 0);
             titleNode.addComponent(UITransform).setContentSize(new Size(900, 80));
@@ -600,7 +662,7 @@ export class UIGame extends Component {
             this.roleTitleLabel.lineHeight = 46;
             this.roleTitleLabel.color = this.menuTitleColor;
 
-            const summaryNode = new Node('RoleSummary');
+            const summaryNode = this.createUINode('RoleSummary');
             summaryNode.parent = this.rolePanel;
             summaryNode.setPosition(0, 410, 0);
             summaryNode.addComponent(UITransform).setContentSize(new Size(900, 72));
@@ -613,7 +675,7 @@ export class UIGame extends Component {
             const roleIds = this.getMenuRoleOptions();
             for (let i = 0; i < roleIds.length; i++) {
                 const roleId = roleIds[i];
-                const buttonNode = new Node(`RoleOption${i + 1}`);
+                const buttonNode = this.createUINode(`RoleOption${i + 1}`);
                 buttonNode.parent = this.rolePanel;
                 buttonNode.setPosition(0, optionY[i], 0);
                 buttonNode.addComponent(UITransform).setContentSize(new Size(900, 94));
@@ -635,7 +697,7 @@ export class UIGame extends Component {
                 this.startSelectedRun();
             }, new Size(260, 80));
 
-            const hintNode = new Node('RoleHint');
+            const hintNode = this.createUINode('RoleHint');
             hintNode.parent = this.rolePanel;
             hintNode.setPosition(0, -620, 0);
             hintNode.addComponent(UITransform).setContentSize(new Size(900, 60));
@@ -648,7 +710,7 @@ export class UIGame extends Component {
     }
 
     private createMenuButton(parent: Node, nodeName: string, text: string, position: Vec3, onClick: () => void, size: Size = new Size(320, 96)) {
-        const buttonNode = new Node(nodeName);
+        const buttonNode = this.createUINode(nodeName);
         buttonNode.parent = parent;
         buttonNode.setPosition(position);
         buttonNode.addComponent(UITransform).setContentSize(size);
@@ -782,7 +844,7 @@ export class UIGame extends Component {
         }
         let hudNode = this.findNodeByName(this.node, 'RuntimeDebugHud');
         if (!hudNode) {
-            hudNode = new Node('RuntimeDebugHud');
+            hudNode = this.createUINode('RuntimeDebugHud');
             hudNode.parent = this.node;
             hudNode.setPosition(-440, 760, 0);
             hudNode.addComponent(UITransform).setContentSize(new Size(520, 180));
@@ -799,7 +861,7 @@ export class UIGame extends Component {
         if (this.runtimeNotifyLabel) {
             return;
         }
-        const notifyNode = new Node('RuntimeNotify');
+        const notifyNode = this.createUINode('RuntimeNotify');
         notifyNode.parent = this.node;
         notifyNode.setPosition(0, 560, 0);
         notifyNode.addComponent(UITransform).setContentSize(new Size(920, 110));
@@ -825,6 +887,7 @@ export class UIGame extends Component {
         if (player) {
             this.bindedPlayer = player;
             player.on(OnOrEmitConst.OnplayerUpgrade, this.onPlayerUpgrade, this);
+            console.log('[UIGame] bound OnplayerUpgrade to player node');
         }
     }
 
@@ -840,7 +903,7 @@ export class UIGame extends Component {
         if (this.upgradePanel) {
             return;
         }
-        this.upgradePanel = new Node('UpgradePanel');
+        this.upgradePanel = this.createUINode('UpgradePanel');
         this.upgradePanel.parent = this.node;
         this.upgradePanel.addComponent(UITransform).setContentSize(new Size(980, 1280));
         this.upgradePanel.addComponent(BlockInputEvents);
@@ -850,7 +913,7 @@ export class UIGame extends Component {
         this.drawSolidBackground(this.upgradePanel, new Color(0, 0, 0, 180), new Size(980, 1280));
 
         // 标题
-        const titleNode = new Node('UpgradeTitle');
+        const titleNode = this.createUINode('UpgradeTitle');
         titleNode.parent = this.upgradePanel;
         titleNode.setPosition(0, 470, 0);
         titleNode.addComponent(UITransform).setContentSize(new Size(900, 120));
@@ -860,7 +923,7 @@ export class UIGame extends Component {
         this.upgradeTitleLabel.color = this.menuTitleColor;
 
         // 倒计时提示
-        const countdownNode = new Node('UpgradeCountdown');
+        const countdownNode = this.createUINode('UpgradeCountdown');
         countdownNode.parent = this.upgradePanel;
         countdownNode.setPosition(0, 390, 0);
         countdownNode.addComponent(UITransform).setContentSize(new Size(900, 36));
@@ -872,7 +935,7 @@ export class UIGame extends Component {
         // 选项卡片（带底板背景）
         const optionY = [280, 130, -20, -170, -320, -470];
         for (let i = 0; i < optionY.length; i++) {
-            const optionNode = new Node(`UpgradeOption${i + 1}`);
+            const optionNode = this.createUINode(`UpgradeOption${i + 1}`);
             optionNode.parent = this.upgradePanel;
             optionNode.setPosition(0, optionY[i], 0);
             optionNode.addComponent(UITransform).setContentSize(new Size(860, 120));
@@ -892,7 +955,7 @@ export class UIGame extends Component {
         }
 
         // 底部操作提示
-        const hintNode = new Node('UpgradeHint');
+        const hintNode = this.createUINode('UpgradeHint');
         hintNode.parent = this.upgradePanel;
         hintNode.setPosition(0, -590, 0);
         hintNode.addComponent(UITransform).setContentSize(new Size(860, 40));
@@ -905,6 +968,9 @@ export class UIGame extends Component {
 
     private showUpgradePanel(mode: UpgradePanelMode, levelValue: number, options: UpgradeOption[], title: string) {
         this.ensureUpgradePanel();
+        const ut = this.upgradePanel.getComponent(UITransform);
+        const parentUt = this.node.getComponent(UITransform);
+        console.log(`[UIGame] showUpgradePanel mode=${mode} Lv.${levelValue} options=${options.length} panelParent=${this.upgradePanel?.parent?.name} panelSize=${ut?.contentSize.width}x${ut?.contentSize.height} parentSize=${parentUt?.contentSize.width}x${parentUt?.contentSize.height} panelPos=${this.upgradePanel.position.toString()} autoSelect=${this.upgradeAutoSelectSeconds}s`);
         this.upgradePanelMode = mode;
         this.currentUpgradeLevel = levelValue;
         this.currentUpgradeOptions = options;
@@ -930,6 +996,7 @@ export class UIGame extends Component {
     }
 
     private hideUpgradePanel(resumeRunning: boolean) {
+        console.log(`[UIGame] hideUpgradePanel resumeRunning=${resumeRunning}, pending=${this.pendingUpgradeLevels.length}, isGameOver=${GameStateInput.isGameOver()}`);
         if (this.upgradePanel) {
             this.upgradePanel.active = false;
         }
@@ -946,38 +1013,44 @@ export class UIGame extends Component {
     private onPlayerUpgrade(levelValue: number, player?: PlayerTs) {
         const playerTs = player ?? this.getPlayerScript();
         if (!playerTs) {
+            console.warn('[UIGame] onPlayerUpgrade: no playerTs');
             return;
         }
+        console.log(`[UIGame] onPlayerUpgrade Lv.${levelValue}, panelActive=${this.upgradePanel?.active}, state=${GameStateInput.gameState}, pending=${this.pendingUpgradeLevels.length}`);
         if (this.upgradePanel?.active || GameStateInput.isSelectingUpgrade()) {
             this.pendingUpgradeLevels.push(levelValue);
             return;
         }
-        this.presentUpgradeForLevel(levelValue, playerTs);
+        if (!this.presentUpgradeForLevel(levelValue, playerTs)) {
+            console.warn(`[UIGame] onPlayerUpgrade: presentUpgradeForLevel returned false for Lv.${levelValue}`);
+            return;
+        }
     }
 
     private tryPresentQueuedUpgrade(): boolean {
-        if (this.pendingUpgradeLevels.length <= 0) {
-            return false;
+        while (this.pendingUpgradeLevels.length > 0) {
+            const playerTs = this.getPlayerScript();
+            if (!playerTs) {
+                this.pendingUpgradeLevels.length = 0;
+                return false;
+            }
+            const nextLevel = this.pendingUpgradeLevels.shift();
+            if (!Number.isFinite(nextLevel)) {
+                continue;
+            }
+            if (this.presentUpgradeForLevel(nextLevel, playerTs)) {
+                return true;
+            }
         }
-        const playerTs = this.getPlayerScript();
-        if (!playerTs) {
-            this.pendingUpgradeLevels.length = 0;
-            return false;
-        }
-        const nextLevel = this.pendingUpgradeLevels.shift();
-        if (!Number.isFinite(nextLevel)) {
-            return false;
-        }
-        this.presentUpgradeForLevel(nextLevel, playerTs);
-        return true;
+        return false;
     }
 
-    private presentUpgradeForLevel(levelValue: number, playerTs: PlayerTs) {
+    private presentUpgradeForLevel(levelValue: number, playerTs: PlayerTs): boolean {
         if (playerTs.canSelectSpecialization(levelValue)) {
             this.presentSpecializationChoices(levelValue);
-            return;
+            return true;
         }
-        this.presentUpgradeChoices(playerTs, levelValue);
+        return this.presentUpgradeChoices(playerTs, levelValue);
     }
 
     private presentSpecializationChoices(levelValue: number) {
@@ -1002,10 +1075,10 @@ export class UIGame extends Component {
         );
     }
 
-    private presentUpgradeChoices(player: PlayerTs, levelValue: number) {
+    private presentUpgradeChoices(player: PlayerTs, levelValue: number): boolean {
         const options = this.pickUpgradeOptions(this.buildUpgradeOptions(player), 3);
         if (options.length <= 0) {
-            return;
+            return false;
         }
         this.showUpgradePanel(
             'upgrade',
@@ -1013,6 +1086,7 @@ export class UIGame extends Component {
             options,
             `Lv.${levelValue} 升级\n职业：${player.getCareerRoleName()} | 被动：${player.getCareerPassiveName()}`,
         );
+        return true;
     }
 
     private buildUpgradeOptions(player: PlayerTs): UpgradeOption[] {
@@ -1021,6 +1095,21 @@ export class UIGame extends Component {
         if (player.isSpecialized()) {
             options.push(...this.buildCareerBranchOptions(player));
             options.push(...this.buildCareerMilestoneOptions(player));
+            // 主动技能解锁选项
+            if (player.canUnlockActiveSkill()) {
+                const skillConfig = CareerActiveSkillConfigs[player.getCareerRoleId()];
+                if (skillConfig) {
+                    options.push({
+                        title: `解锁主动技能：${skillConfig.name}`,
+                        desc: `${skillConfig.desc}\n冷却 ${skillConfig.cooldown} 秒 | 消耗 ${skillConfig.unlockSkillPointCost} 技能点`,
+                        rarity: 'rare',
+                        weight: 3.0,
+                        apply: (target: PlayerTs) => {
+                            target.unlockActiveSkill();
+                        },
+                    });
+                }
+            }
         }
         return options;
     }
@@ -1124,6 +1213,8 @@ export class UIGame extends Component {
     private applyUpgradeOption(index: number) {
         const option = this.currentUpgradeOptions[index];
         const player = this.getPlayerScript();
+        console.log(`[UIGame] applyUpgradeOption index=${index}, hasOption=${!!option}, hasPlayer=${!!player}`);
+        console.trace('[UIGame] applyUpgradeOption callstack');
         if (!option || !player) {
             this.hideUpgradePanel(true);
             return;
@@ -1299,6 +1390,12 @@ export class UIGame extends Component {
         case 'techShare':
             this.showRuntimeNotify(`技术分享会：${Math.max(1, Math.floor(scale))} 个知识点已出现，拾取获得临时增益！`, 3);
             break;
+        case 'techDebtAura':
+            this.showRuntimeNotify(`技术债利息叠层 ${Math.floor(scale)}/${Math.floor(duration)}，全场怪物更强！`, 2.2);
+            break;
+        case 'codeReview':
+            this.showRuntimeNotify(`代码 Review：${Math.max(1, Math.floor(scale))} 只怪物被标记为问题代码，击杀获得双倍经验！`, 3);
+            break;
         default:
             break;
         }
@@ -1354,6 +1451,26 @@ export class UIGame extends Component {
         this.showRuntimeNotify(`获得增益：${name}（${duration} 秒）`, 2);
     }
 
+    private onActiveSkillCast(_id: string, name: string, duration: number, cooldown: number) {
+        this.showRuntimeNotify(`释放技能：${name}（持续 ${duration.toFixed(1)} 秒，冷却 ${cooldown} 秒）| 按 Q 释放`, 3);
+    }
+
+    private onActiveSkillReady(_id: string, name: string) {
+        this.showRuntimeNotify(`技能就绪：${name} | 按 Q 释放`, 2);
+    }
+
+    private onActiveSkillUnlocked(_id: string, name: string, desc: string) {
+        this.showRuntimeNotify(`解锁主动技能：${name} — ${desc} | 按 Q 释放`, 4);
+    }
+
+    private onTechDebtAuraStack(stacks: number, maxStacks: number) {
+        if (stacks <= 0) {
+            this.showRuntimeNotify('技术债利息光环已消退', 1.5);
+        } else {
+            this.showRuntimeNotify(`技术债利息：全场增益 ${stacks}/${maxStacks} 层，优先击杀！`, 2);
+        }
+    }
+
     private safeNodeOff(target: Node, eventName: string, handler: (...args: any[]) => void) {
         if (!target) {
             return;
@@ -1361,9 +1478,16 @@ export class UIGame extends Component {
         target.off(eventName, handler, this);
     }
 
+    /** 创建一个 UI_2D 层的节点，确保 UI Camera 能渲染 */
+    private createUINode(name: string): Node {
+        const node = new Node(name);
+        node.layer = Layers.Enum.UI_2D;
+        return node;
+    }
+
     /** 用 Graphics 在节点上绘制纯色矩形背景 */
     private drawSolidBackground(parent: Node, color: Color, size: Size): Node {
-        const bgNode = new Node('SolidBg');
+        const bgNode = this.createUINode('SolidBg');
         bgNode.parent = parent;
         bgNode.setPosition(0, 0, 0);
         // 确保背景在最底层
@@ -1383,7 +1507,7 @@ export class UIGame extends Component {
         if (this.settlementPanel) {
             return;
         }
-        this.settlementPanel = new Node('SettlementPanel');
+        this.settlementPanel = this.createUINode('SettlementPanel');
         this.settlementPanel.parent = this.node;
         this.settlementPanel.addComponent(UITransform).setContentSize(new Size(980, 1280));
         this.settlementPanel.addComponent(BlockInputEvents);
@@ -1393,7 +1517,7 @@ export class UIGame extends Component {
         this.drawSolidBackground(this.settlementPanel, new Color(5, 10, 25, 220), new Size(980, 1280));
 
         // 标题
-        const titleNode = new Node('SettlementTitle');
+        const titleNode = this.createUINode('SettlementTitle');
         titleNode.parent = this.settlementPanel;
         titleNode.setPosition(0, 460, 0);
         titleNode.addComponent(UITransform).setContentSize(new Size(900, 80));
@@ -1403,7 +1527,7 @@ export class UIGame extends Component {
         this.settlementTitleLabel.color = this.settlementTitleColor;
 
         // 评级
-        const ratingNode = new Node('SettlementRating');
+        const ratingNode = this.createUINode('SettlementRating');
         ratingNode.parent = this.settlementPanel;
         ratingNode.setPosition(0, 340, 0);
         ratingNode.addComponent(UITransform).setContentSize(new Size(900, 100));
@@ -1412,7 +1536,7 @@ export class UIGame extends Component {
         this.settlementRatingLabel.lineHeight = 72;
 
         // 统计信息
-        const statsNode = new Node('SettlementStats');
+        const statsNode = this.createUINode('SettlementStats');
         statsNode.parent = this.settlementPanel;
         statsNode.setPosition(0, 40, 0);
         statsNode.addComponent(UITransform).setContentSize(new Size(860, 400));
@@ -1434,7 +1558,7 @@ export class UIGame extends Component {
         }, new Size(280, 90));
 
         // 底部提示
-        const hintNode = new Node('SettlementHint');
+        const hintNode = this.createUINode('SettlementHint');
         hintNode.parent = this.settlementPanel;
         hintNode.setPosition(0, -380, 0);
         hintNode.addComponent(UITransform).setContentSize(new Size(860, 50));

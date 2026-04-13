@@ -1,4 +1,5 @@
 import { _decorator, CCInteger, Component, director, game, instantiate, Node, Prefab, randomRange, v3, Vec3 } from 'cc';
+import { ActorState } from '../../const/ActorState';
 import { CareerRoleId } from '../../const/CareerConfig';
 import { EffectConst } from '../../const/EffectConst';
 import { GameStateEnum } from '../../const/GameStateEnum';
@@ -178,6 +179,41 @@ export class level extends Component {
     private techShareBuffDuration = 15;
     private techSharePickups: DropItemInfo[] = [];
 
+    // 代码 Review 事件
+    private codeReviewUnlockTime = 300;
+    private codeReviewInterval = 100;
+    private codeReviewMarkCount = 3;
+    private codeReviewExpMultiplier = 2;
+    private codeReviewMarkDuration = 15;
+    private codeReviewNextTime = 300;
+    private codeReviewMarkedMonsters: { node: Node; expireAt: number; originalScale: number }[] = [];
+
+    // 技术债利息精英
+    private techDebtUnlockTime = 120;
+    private techDebtSpawnInterval = 65;
+    private techDebtScaleMin = 1.2;
+    private techDebtScaleMax = 1.55;
+    private techDebtHPMultiplier = 2.2;
+    private techDebtAttackMultiplier = 1.3;
+    private techDebtMoveSpeedMultiplier = 1.2;
+    private techDebtAuraInterval = 4;
+    private techDebtAuraAttackBonus = 0.08;
+    private techDebtAuraMaxStacks = 12;
+    private techDebtNextSpawnAt = 120;
+    private techDebtAuraStacks = 0;
+    private techDebtAuraTimer = 0;
+    private techDebtAliveNodes: Node[] = [];
+
+    // 需求变更单精英
+    private reqChangeUnlockTime = 150;
+    private reqChangeSpawnInterval = 72;
+    private reqChangeScaleMin = 1.25;
+    private reqChangeScaleMax = 1.6;
+    private reqChangeHPMultiplier = 2.0;
+    private reqChangeAttackMultiplier = 1.8;
+    private reqChangeMoveSpeedMultiplier = 1.25;
+    private reqChangeNextSpawnAt = 150;
+
     private spawnPos: Vec3 = v3();
 
     start() {
@@ -237,6 +273,12 @@ export class level extends Component {
         this.incidentBaseAttackBonus = levelConfig.IncidentBaseAttackBonus ?? this.incidentBaseAttackBonus;
         this.incidentMoveSpeedScale = levelConfig.IncidentMoveSpeedScale ?? this.incidentMoveSpeedScale;
 
+        this.codeReviewUnlockTime = levelConfig.CodeReviewUnlockTime ?? this.codeReviewUnlockTime;
+        this.codeReviewInterval = levelConfig.CodeReviewInterval ?? this.codeReviewInterval;
+        this.codeReviewMarkCount = levelConfig.CodeReviewMarkCount ?? this.codeReviewMarkCount;
+        this.codeReviewExpMultiplier = levelConfig.CodeReviewExpMultiplier ?? this.codeReviewExpMultiplier;
+        this.codeReviewMarkDuration = levelConfig.CodeReviewMarkDuration ?? this.codeReviewMarkDuration;
+
         this.eliteUnlockTime = levelConfig.EliteUnlockTime ?? this.eliteUnlockTime;
         this.eliteSpawnInterval = levelConfig.EliteSpawnInterval ?? this.eliteSpawnInterval;
         this.eliteSpawnCount = levelConfig.EliteSpawnCount ?? this.eliteSpawnCount;
@@ -246,6 +288,25 @@ export class level extends Component {
         this.eliteAttackMultiplier = levelConfig.EliteAttackMultiplier ?? this.eliteAttackMultiplier;
         this.eliteMoveSpeedMultiplier = levelConfig.EliteMoveSpeedMultiplier ?? this.eliteMoveSpeedMultiplier;
         this.eliteDisplayName = levelConfig.EliteDisplayName ?? this.eliteDisplayName;
+
+        this.techDebtUnlockTime = levelConfig.TechDebtUnlockTime ?? this.techDebtUnlockTime;
+        this.techDebtSpawnInterval = levelConfig.TechDebtSpawnInterval ?? this.techDebtSpawnInterval;
+        this.techDebtScaleMin = levelConfig.TechDebtScaleMin ?? this.techDebtScaleMin;
+        this.techDebtScaleMax = levelConfig.TechDebtScaleMax ?? this.techDebtScaleMax;
+        this.techDebtHPMultiplier = levelConfig.TechDebtHPMultiplier ?? this.techDebtHPMultiplier;
+        this.techDebtAttackMultiplier = levelConfig.TechDebtAttackMultiplier ?? this.techDebtAttackMultiplier;
+        this.techDebtMoveSpeedMultiplier = levelConfig.TechDebtMoveSpeedMultiplier ?? this.techDebtMoveSpeedMultiplier;
+        this.techDebtAuraInterval = levelConfig.TechDebtAuraInterval ?? this.techDebtAuraInterval;
+        this.techDebtAuraAttackBonus = levelConfig.TechDebtAuraAttackBonus ?? this.techDebtAuraAttackBonus;
+        this.techDebtAuraMaxStacks = levelConfig.TechDebtAuraMaxStacks ?? this.techDebtAuraMaxStacks;
+
+        this.reqChangeUnlockTime = levelConfig.ReqChangeUnlockTime ?? this.reqChangeUnlockTime;
+        this.reqChangeSpawnInterval = levelConfig.ReqChangeSpawnInterval ?? this.reqChangeSpawnInterval;
+        this.reqChangeScaleMin = levelConfig.ReqChangeScaleMin ?? this.reqChangeScaleMin;
+        this.reqChangeScaleMax = levelConfig.ReqChangeScaleMax ?? this.reqChangeScaleMax;
+        this.reqChangeHPMultiplier = levelConfig.ReqChangeHPMultiplier ?? this.reqChangeHPMultiplier;
+        this.reqChangeAttackMultiplier = levelConfig.ReqChangeAttackMultiplier ?? this.reqChangeAttackMultiplier;
+        this.reqChangeMoveSpeedMultiplier = levelConfig.ReqChangeMoveSpeedMultiplier ?? this.reqChangeMoveSpeedMultiplier;
 
         this.bossType = levelConfig.BossType ?? this.bossType;
         this.bossDisplayName = levelConfig.BossDisplayName ?? this.bossDisplayName;
@@ -309,6 +370,7 @@ export class level extends Component {
         this.clearBossPieTraps();
         this.clearDropItems();
         this.clearTechSharePickups();
+        this.clearCodeReviewMarks();
         MonsterManager.instance.destroy();
         EffectManager.instance.destroy();
         PoolManager.instance.clearAllNodes();
@@ -334,6 +396,11 @@ export class level extends Component {
         this.updatePlayerBuffs(deltaTime);
         this.updateTechShareState();
         this.updateTechSharePickups();
+        this.updateCodeReviewState();
+        this.updateCodeReviewMarks();
+        this.updateTechDebtSpawnState();
+        this.updateTechDebtAura(deltaTime);
+        this.updateReqChangeSpawnState();
 
         this.refashMap += deltaTime;
         if (this.refashMap > this.mapRefreshInterval) {
@@ -390,6 +457,13 @@ export class level extends Component {
         this.clearTechSharePickups();
         this.playerBuffs.length = 0;
         this.techShareNextTime = this.techShareUnlockTime;
+        this.codeReviewNextTime = this.codeReviewUnlockTime;
+        this.clearCodeReviewMarks();
+        this.techDebtNextSpawnAt = this.techDebtUnlockTime;
+        this.techDebtAuraStacks = 0;
+        this.techDebtAuraTimer = 0;
+        this.techDebtAliveNodes.length = 0;
+        this.reqChangeNextSpawnAt = this.reqChangeUnlockTime;
     }
 
     private getPlayerLevel(): number {
@@ -1400,5 +1474,318 @@ export class level extends Component {
             }
         }
         this.techSharePickups.length = 0;
+    }
+
+    // ==================== 代码 Review 事件 ====================
+
+    private updateCodeReviewState() {
+        if (this.codeReviewInterval <= 0 || this.codeReviewMarkCount <= 0) {
+            return;
+        }
+        if (this.battleElapsed < this.codeReviewNextTime) {
+            return;
+        }
+        this.codeReviewNextTime = this.battleElapsed + this.codeReviewInterval;
+        this.triggerCodeReview();
+    }
+
+    private triggerCodeReview() {
+        this.statEventsTriggered += 1;
+        const entries = MonsterManager.instance.goalvoes;
+        if (!entries || entries.size <= 0) {
+            return;
+        }
+
+        // 收集所有存活的普通怪物节点
+        const candidates: Node[] = [];
+        for (const goalId of entries.keys()) {
+            const entry = entries.get(goalId);
+            const node = entry?.mSphere;
+            if (!node || !node.isValid || !node.activeInHierarchy) {
+                continue;
+            }
+            const monster = node.getComponent(Monster);
+            if (!monster || monster.currState === ActorState.Die) {
+                continue;
+            }
+            // 不标记已有标记的、精英或 Boss
+            if (monster.isCodeReviewMarked || monster.isElite || monster.isBoss) {
+                continue;
+            }
+            candidates.push(node);
+        }
+
+        if (candidates.length <= 0) {
+            return;
+        }
+
+        // 随机选取最多 markCount 个
+        const markCount = Math.min(this.codeReviewMarkCount, candidates.length);
+        // Fisher-Yates shuffle 取前 markCount 个
+        for (let i = candidates.length - 1; i > 0 && i >= candidates.length - markCount; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+
+        let markedCount = 0;
+        for (let i = candidates.length - markCount; i < candidates.length; i++) {
+            const node = candidates[i];
+            const monster = node.getComponent(Monster);
+            if (!monster) {
+                continue;
+            }
+            monster.isCodeReviewMarked = true;
+            monster.codeReviewExpMultiplier = this.codeReviewExpMultiplier;
+            // 视觉标记：放大 1.25 倍
+            const originalScale = node.scale.x;
+            node.setScale(originalScale * 1.25, node.scale.y * 1.25, node.scale.z * 1.25);
+            this.codeReviewMarkedMonsters.push({
+                node,
+                expireAt: this.battleElapsed + this.codeReviewMarkDuration,
+                originalScale,
+            });
+            markedCount += 1;
+        }
+
+        if (markedCount > 0) {
+            director.getScene().emit(
+                OnOrEmitConst.OnEliteCast,
+                'codeReview',
+                null,
+                '代码 Review',
+                markedCount,
+                this.codeReviewMarkDuration,
+            );
+        }
+    }
+
+    private updateCodeReviewMarks() {
+        if (this.codeReviewMarkedMonsters.length <= 0) {
+            return;
+        }
+
+        for (let i = this.codeReviewMarkedMonsters.length - 1; i >= 0; i--) {
+            const mark = this.codeReviewMarkedMonsters[i];
+            if (!mark.node || !mark.node.isValid || !mark.node.activeInHierarchy) {
+                this.codeReviewMarkedMonsters.splice(i, 1);
+                continue;
+            }
+
+            const monster = mark.node.getComponent(Monster);
+            // 怪物已死亡或标记过期
+            if (!monster || monster.currState === ActorState.Die || this.battleElapsed >= mark.expireAt) {
+                // 恢复缩放
+                if (monster && monster.currState !== ActorState.Die) {
+                    monster.isCodeReviewMarked = false;
+                    monster.codeReviewExpMultiplier = 1;
+                    mark.node.setScale(mark.originalScale, mark.originalScale, mark.originalScale);
+                }
+                this.codeReviewMarkedMonsters.splice(i, 1);
+                continue;
+            }
+        }
+    }
+
+    private clearCodeReviewMarks() {
+        for (const mark of this.codeReviewMarkedMonsters) {
+            if (mark.node && mark.node.isValid) {
+                const monster = mark.node.getComponent(Monster);
+                if (monster) {
+                    monster.isCodeReviewMarked = false;
+                    monster.codeReviewExpMultiplier = 1;
+                }
+                mark.node.setScale(mark.originalScale, mark.originalScale, mark.originalScale);
+            }
+        }
+        this.codeReviewMarkedMonsters.length = 0;
+    }
+
+    // ==================== 技术债利息精英 ====================
+
+    private updateTechDebtSpawnState() {
+        if (this.techDebtSpawnInterval <= 0) {
+            return;
+        }
+        if (this.battleElapsed < this.techDebtNextSpawnAt) {
+            return;
+        }
+        this.techDebtNextSpawnAt = this.battleElapsed + this.techDebtSpawnInterval;
+        this.spawnTechDebtElite();
+    }
+
+    private spawnTechDebtElite() {
+        const player = MonsterManager.instance.player;
+        if (!player || MonsterManager.instance.goalvoes.size >= this.maxAlive) {
+            return;
+        }
+
+        const angle = randomRange(0, Math.PI * 2);
+        const radius = randomRange(this.spawnRadiusMin, this.spawnRadiusMax);
+        const playerPos = player.getWorldPosition();
+        this.spawnPos.set(
+            playerPos.x + Math.cos(angle) * radius,
+            0,
+            playerPos.z + Math.sin(angle) * radius,
+        );
+
+        const scale = randomRange(this.techDebtScaleMin, this.techDebtScaleMax);
+        const runtimeDifficulty = this.getRuntimeDifficultyScale();
+        const node = MonsterManager.instance.createEnemy(this.spawnPos, scale);
+        if (!node) {
+            return;
+        }
+
+        const monster = node.getComponent(Monster);
+        if (!monster) {
+            return;
+        }
+
+        monster.monsterInit(
+            this.baseHP * runtimeDifficulty,
+            this.baseAttack * runtimeDifficulty,
+            this.techDebtHPMultiplier,
+            this.techDebtAttackMultiplier,
+            this.techDebtMoveSpeedMultiplier,
+        );
+        monster.isTechDebt = true;
+
+        this.techDebtAliveNodes.push(node);
+
+        director.getScene().emit(
+            OnOrEmitConst.OnEliteSpawn,
+            1,
+            MonsterManager.instance.goalvoes.size,
+            Math.floor(this.battleElapsed),
+            '技术债利息',
+        );
+    }
+
+    private updateTechDebtAura(deltaTime: number) {
+        // 清理已死亡的技术债节点
+        for (let i = this.techDebtAliveNodes.length - 1; i >= 0; i--) {
+            const node = this.techDebtAliveNodes[i];
+            if (!node || !node.isValid || !node.activeInHierarchy) {
+                this.techDebtAliveNodes.splice(i, 1);
+            } else {
+                const monster = node.getComponent(Monster);
+                if (monster && monster.currState === ActorState.Die) {
+                    this.techDebtAliveNodes.splice(i, 1);
+                }
+            }
+        }
+
+        // 没有存活的技术债精英时，逐渐消退光环
+        if (this.techDebtAliveNodes.length <= 0) {
+            if (this.techDebtAuraStacks > 0) {
+                this.techDebtAuraTimer += deltaTime;
+                if (this.techDebtAuraTimer >= this.techDebtAuraInterval * 2) {
+                    this.techDebtAuraTimer = 0;
+                    this.techDebtAuraStacks = Math.max(0, this.techDebtAuraStacks - 1);
+                    this.applyTechDebtAuraToAll();
+                    if (this.techDebtAuraStacks <= 0) {
+                        director.getScene().emit(OnOrEmitConst.OnTechDebtAuraStack, 0, this.techDebtAuraMaxStacks);
+                    }
+                }
+            }
+            return;
+        }
+
+        // 有存活的技术债精英时，定时叠层
+        this.techDebtAuraTimer += deltaTime;
+        if (this.techDebtAuraTimer >= this.techDebtAuraInterval) {
+            this.techDebtAuraTimer = 0;
+            if (this.techDebtAuraStacks < this.techDebtAuraMaxStacks) {
+                this.techDebtAuraStacks += 1;
+                this.applyTechDebtAuraToAll();
+                director.getScene().emit(
+                    OnOrEmitConst.OnTechDebtAuraStack,
+                    this.techDebtAuraStacks,
+                    this.techDebtAuraMaxStacks,
+                );
+                director.getScene().emit(
+                    OnOrEmitConst.OnEliteCast,
+                    'techDebtAura',
+                    null,
+                    '技术债利息',
+                    this.techDebtAuraStacks,
+                    this.techDebtAuraMaxStacks,
+                );
+            }
+        }
+    }
+
+    private applyTechDebtAuraToAll() {
+        const entries = MonsterManager.instance.goalvoes;
+        if (!entries) {
+            return;
+        }
+        const bonusScale = 1 + this.techDebtAuraStacks * this.techDebtAuraAttackBonus;
+        for (const goalId of entries.keys()) {
+            const entry = entries.get(goalId);
+            const monster = entry?.mSphere?.getComponent(Monster);
+            if (!monster) {
+                continue;
+            }
+            // 技术债光环只影响攻击力的运行时倍率
+            monster.runtimeMoveSpeedScale = Math.max(monster.runtimeMoveSpeedScale, bonusScale * 0.5);
+        }
+    }
+
+    // ==================== 需求变更单精英 ====================
+
+    private updateReqChangeSpawnState() {
+        if (this.reqChangeSpawnInterval <= 0) {
+            return;
+        }
+        if (this.battleElapsed < this.reqChangeNextSpawnAt) {
+            return;
+        }
+        this.reqChangeNextSpawnAt = this.battleElapsed + this.reqChangeSpawnInterval;
+        this.spawnReqChangeElite();
+    }
+
+    private spawnReqChangeElite() {
+        const player = MonsterManager.instance.player;
+        if (!player || MonsterManager.instance.goalvoes.size >= this.maxAlive) {
+            return;
+        }
+
+        const angle = randomRange(0, Math.PI * 2);
+        const radius = randomRange(this.spawnRadiusMin, this.spawnRadiusMax);
+        const playerPos = player.getWorldPosition();
+        this.spawnPos.set(
+            playerPos.x + Math.cos(angle) * radius,
+            0,
+            playerPos.z + Math.sin(angle) * radius,
+        );
+
+        const scale = randomRange(this.reqChangeScaleMin, this.reqChangeScaleMax);
+        const runtimeDifficulty = this.getRuntimeDifficultyScale();
+        const node = MonsterManager.instance.createEnemy(this.spawnPos, scale);
+        if (!node) {
+            return;
+        }
+
+        const monster = node.getComponent(Monster);
+        if (!monster) {
+            return;
+        }
+
+        monster.monsterInit(
+            this.baseHP * runtimeDifficulty,
+            this.baseAttack * runtimeDifficulty,
+            this.reqChangeHPMultiplier,
+            this.reqChangeAttackMultiplier,
+            this.reqChangeMoveSpeedMultiplier,
+        );
+        monster.isReqChange = true;
+
+        director.getScene().emit(
+            OnOrEmitConst.OnEliteSpawn,
+            1,
+            MonsterManager.instance.goalvoes.size,
+            Math.floor(this.battleElapsed),
+            '需求变更单',
+        );
     }
 }
