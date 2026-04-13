@@ -125,6 +125,51 @@ export class RunGameInfoVo {
     public set projectileCount(projectileCount: number){
         this._projectileCount = projectileCount;
     }
+
+    // 当前职业 ID
+    private _careerRoleId: string = "student";
+    public get careerRoleId(): string {
+        return this._careerRoleId;
+    }
+    public set careerRoleId(value: string) {
+        this._careerRoleId = value;
+    }
+
+    // 当前职业名称
+    private _careerRoleName: string = "计算机学生";
+    public get careerRoleName(): string {
+        return this._careerRoleName;
+    }
+    public set careerRoleName(value: string) {
+        this._careerRoleName = value;
+    }
+
+    // 当前技术树主修分支 ID
+    private _careerBranchId: string = "";
+    public get careerBranchId(): string {
+        return this._careerBranchId;
+    }
+    public set careerBranchId(value: string) {
+        this._careerBranchId = value;
+    }
+
+    // 当前技术树主修分支名称
+    private _careerBranchName: string = "";
+    public get careerBranchName(): string {
+        return this._careerBranchName;
+    }
+    public set careerBranchName(value: string) {
+        this._careerBranchName = value;
+    }
+
+    // 技能点（每 5 级获得 1 点）
+    private _skillPoint: number = 0;
+    public get skillPoint(): number {
+        return this._skillPoint;
+    }
+    public set skillPoint(value: number) {
+        this._skillPoint = value;
+    }
 }
 
 

@@ -57,6 +57,16 @@ export enum OnOrEmitConst{
      OnExpGain = "OnExpGain",
 
      /**
+      * 技能点变化（totalSkillPoint, gainedThisTime, level）
+      */
+     OnSkillPointChanged = "OnSkillPointChanged",
+
+     /**
+      * 角色专职变化
+      */
+     OnCareerChanged = "OnCareerChanged",
+
+     /**
       * 精英怪刷新提示
       */
      OnEliteSpawn = "OnEliteSpawn",
@@ -90,4 +100,24 @@ export enum OnOrEmitConst{
       * Boss 被击败
       */
      OnBossKilled = "OnBossKilled",
+
+     /**
+      * 请求开始战斗
+      */
+     OnRequestStartRun = "OnRequestStartRun",
+
+     /**
+      * 普通怪被击杀（用于掉落物判定）
+      */
+     OnNormalKill = "OnNormalKill",
+
+     /**
+      * 掉落物被拾取
+      */
+     OnDropCollected = "OnDropCollected",
+
+     /**
+      * 玩家获得临时 Buff
+      */
+     OnBuffGained = "OnBuffGained",
 }

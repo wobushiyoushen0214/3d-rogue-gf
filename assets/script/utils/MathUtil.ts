@@ -30,7 +30,13 @@ export class MathUtil {
     }
 
     static signAngle(from:Vec3, to:Vec3, axis: Vec3): number{
+        if (from.lengthSqr() <= 0.000001 || to.lengthSqr() <= 0.000001){
+            return 0;
+        }
         const angle = Vec3.angle(from, to);
+        if (!Number.isFinite(angle)){
+            return 0;
+        }
 
         let corss = v3();
         Vec3.cross(corss, from, to);

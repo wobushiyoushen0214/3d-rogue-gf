@@ -26,6 +26,16 @@ export class LevelConfigVo {
     BossType: string ;
 
     /**
+     * EliteDisplayName(精英展示名)
+     */
+    EliteDisplayName?: string;
+
+    /**
+     * BossDisplayName(Boss 展示名)
+     */
+    BossDisplayName?: string;
+
+    /**
      * BossAbility(Boss使用的技能)
      */
     BossAbility: string[];
@@ -81,6 +91,16 @@ export class LevelConfigVo {
     DifficultyInterval?: number;
 
     /**
+     * DifficultyGraceTime(前期缓冲时间 秒，期间难度不主动上升)
+     */
+    DifficultyGraceTime?: number;
+
+    /**
+     * LatePressureScale(中后期难度推进倍率)
+     */
+    LatePressureScale?: number;
+
+    /**
      * HPGrowthPerTick(难度成长时血量增幅)
      */
     HPGrowthPerTick?: number;
@@ -94,6 +114,161 @@ export class LevelConfigVo {
      * SpawnCountGrowthPerTick(难度成长时每波增怪)
      */
     SpawnCountGrowthPerTick?: number;
+
+    /**
+     * SpawnIntervalFloor(普通怪最短刷怪间隔 秒)
+     */
+    SpawnIntervalFloor?: number;
+
+    /**
+     * SpawnIntervalLevelDecay(玩家每升 1 级，普通怪刷怪间隔额外缩短值)
+     */
+    SpawnIntervalLevelDecay?: number;
+
+    /**
+     * SpawnIntervalTimeDecayRate(随战斗时间推进的刷怪间隔缩短系数)
+     */
+    SpawnIntervalTimeDecayRate?: number;
+
+    /**
+     * SpawnCountLevelBonusRate(玩家每升 1 级带来的额外刷怪数量系数)
+     */
+    SpawnCountLevelBonusRate?: number;
+
+    /**
+     * DemandSurgeUnlockTime(需求轰炸首次触发时间 秒)
+     */
+    DemandSurgeUnlockTime?: number;
+
+    /**
+     * DemandSurgeInterval(需求轰炸触发间隔 秒)
+     */
+    DemandSurgeInterval?: number;
+
+    /**
+     * DemandSurgeWaveScale(需求轰炸额外波次规模系数)
+     */
+    DemandSurgeWaveScale?: number;
+
+    /**
+     * DemandSurgeRepeatCount(需求轰炸追加波次数)
+     */
+    DemandSurgeRepeatCount?: number;
+
+    /**
+     * DemandSurgeRepeatDelay(需求轰炸追加波次延迟 秒)
+     */
+    DemandSurgeRepeatDelay?: number;
+
+    /**
+     * ScheduleRushUnlockTime(排期冲刺首次触发时间 秒)
+     */
+    ScheduleRushUnlockTime?: number;
+
+    /**
+     * ScheduleRushInterval(排期冲刺触发间隔 秒)
+     */
+    ScheduleRushInterval?: number;
+
+    /**
+     * ScheduleRushDuration(排期冲刺持续时间 秒)
+     */
+    ScheduleRushDuration?: number;
+
+    /**
+     * ScheduleRushSpawnIntervalScale(排期冲刺期间刷怪间隔倍率)
+     */
+    ScheduleRushSpawnIntervalScale?: number;
+
+    /**
+     * ScheduleRushSpawnRadiusScale(排期冲刺期间刷怪半径倍率)
+     */
+    ScheduleRushSpawnRadiusScale?: number;
+
+    /**
+     * ScheduleRushBurstScale(排期冲刺启动时额外波次系数)
+     */
+    ScheduleRushBurstScale?: number;
+
+    /**
+     * ProjectReviewUnlockTime(项目评审首次触发时间 秒)
+     */
+    ProjectReviewUnlockTime?: number;
+
+    /**
+     * ProjectReviewInterval(项目评审触发间隔 秒)
+     */
+    ProjectReviewInterval?: number;
+
+    /**
+     * ProjectReviewWaveCount(项目评审基础波次数量)
+     */
+    ProjectReviewWaveCount?: number;
+
+    /**
+     * ProjectReviewSpawnRadiusMin(项目评审最小刷怪半径)
+     */
+    ProjectReviewSpawnRadiusMin?: number;
+
+    /**
+     * ProjectReviewSpawnRadiusMax(项目评审最大刷怪半径)
+     */
+    ProjectReviewSpawnRadiusMax?: number;
+
+    /**
+     * ProjectReviewBaseHpBonus(项目评审基础生命补正)
+     */
+    ProjectReviewBaseHpBonus?: number;
+
+    /**
+     * ProjectReviewBaseAttackBonus(项目评审基础攻击补正)
+     */
+    ProjectReviewBaseAttackBonus?: number;
+
+    /**
+     * ProjectReviewMoveSpeedScale(项目评审移动压迫倍率)
+     */
+    ProjectReviewMoveSpeedScale?: number;
+
+    /**
+     * IncidentUnlockTime(线上事故首次触发时间 秒)
+     */
+    IncidentUnlockTime?: number;
+
+    /**
+     * IncidentInterval(线上事故触发间隔 秒)
+     */
+    IncidentInterval?: number;
+
+    /**
+     * IncidentWaveCount(线上事故基础波次数量)
+     */
+    IncidentWaveCount?: number;
+
+    /**
+     * IncidentSpawnRadiusMin(线上事故最小刷怪半径)
+     */
+    IncidentSpawnRadiusMin?: number;
+
+    /**
+     * IncidentSpawnRadiusMax(线上事故最大刷怪半径)
+     */
+    IncidentSpawnRadiusMax?: number;
+
+    /**
+     * IncidentBaseHpBonus(线上事故基础生命补正)
+     */
+    IncidentBaseHpBonus?: number;
+
+    /**
+     * IncidentBaseAttackBonus(线上事故基础攻击补正)
+     */
+    IncidentBaseAttackBonus?: number;
+
+    /**
+     * IncidentMoveSpeedScale(线上事故移动压迫倍率)
+     */
+    IncidentMoveSpeedScale?: number;
 
     /**
      * EliteUnlockTime(首只精英出现时间 秒)
@@ -134,6 +309,16 @@ export class LevelConfigVo {
      * EliteMoveSpeedMultiplier(精英移速倍率)
      */
     EliteMoveSpeedMultiplier?: number;
+
+    /**
+     * EliteBurdenScale(精英维护负担倍率，作用于主角攻击间隔)
+     */
+    EliteBurdenScale?: number;
+
+    /**
+     * EliteBurdenDuration(精英维护负担持续时间 秒)
+     */
+    EliteBurdenDuration?: number;
 
     /**
      * EliteCoreDropExp(精英灵核拾取经验)
@@ -214,6 +399,66 @@ export class LevelConfigVo {
      * BossSpawnRadius(Boss离玩家刷新半径)
      */
     BossSpawnRadius?: number;
+
+    /**
+     * BossRushInterval(愿景冲刺触发间隔 秒)
+     */
+    BossRushInterval?: number;
+
+    /**
+     * BossRushDuration(愿景冲刺持续时间 秒)
+     */
+    BossRushDuration?: number;
+
+    /**
+     * BossRushSpeedScale(愿景冲刺期间敌人移速倍率)
+     */
+    BossRushSpeedScale?: number;
+
+    /**
+     * BossPieInterval(画饼陷阱触发间隔 秒)
+     */
+    BossPieInterval?: number;
+
+    /**
+     * BossPieDuration(画饼陷阱存在时间 秒)
+     */
+    BossPieDuration?: number;
+
+    /**
+     * BossPieCount(每次生成画饼陷阱数量)
+     */
+    BossPieCount?: number;
+
+    /**
+     * BossPieRadius(画饼陷阱触发半径)
+     */
+    BossPieRadius?: number;
+
+    /**
+     * BossPieDebuffScale(踩中画饼后的维护负担倍率)
+     */
+    BossPieDebuffScale?: number;
+
+    /**
+     * BossPieDebuffDuration(踩中画饼后的维护负担持续时间 秒)
+     */
+    BossPieDebuffDuration?: number;
+
+    /**
+     * BossPieSpawnRadiusMin(画饼陷阱离玩家最小生成半径)
+     */
+    BossPieSpawnRadiusMin?: number;
+
+    /**
+     * BossPieSpawnRadiusMax(画饼陷阱离玩家最大生成半径)
+     */
+    BossPieSpawnRadiusMax?: number;
+
+    /**
+     * BossFinalStandWaveScale(再坚持一下阶段召唤波次系数)
+     */
+    BossFinalStandWaveScale?: number;
 }
 
 

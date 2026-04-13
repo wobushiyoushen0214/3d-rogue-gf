@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ':*)",
+      "Bash(python3 -u -c ':*)",
+      "Bash(npx tsc:*)",
+      "Bash(node --experimental-transform-types --check assets/script/view/game/UIGameTs.ts)",
+      "Bash(node --experimental-transform-types --check assets/script/view/game/level.ts)",
+      "Bash(node --experimental-transform-types --check assets/script/view/game/PlayerTs.ts)"
+    ]
+  }
+}

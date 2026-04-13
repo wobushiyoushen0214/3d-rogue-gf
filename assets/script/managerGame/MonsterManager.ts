@@ -15,15 +15,15 @@ class IdVector {
         this.id = id;
         this.mSphere = mSphere;
     }
-    // 动态避障中分配的角色Agent的id
+    // RVO agent ID
     id: number = null;
-    // 角色的节点实例
+    // 怪物节点引用
     mSphere: Node = null;
 };
 
 let posGoal = new Vector2(0, 0);
 /**
- * 角色管理类
+ * 怪物管理器
  *  */ 
 export class MonsterManager {
 
@@ -38,7 +38,7 @@ export class MonsterManager {
         return this._instance;
     }
 
-    // 记录所有的位置、节点信息、与动态避障对应的AgentId
+    // 所有活跃怪物的 agentId 映射
     goalvoes: Map<string, IdVector> = null; 
 
     enemyPool: Pool<Node> = null;
@@ -47,7 +47,7 @@ export class MonsterManager {
     private bossNodeName: string = "";
     /**
      * 
-     * @param onComplet         加载时的回调函数
+     * @param onComplet         预加载完成后的回调
      */
     init(onComplet:()=>void = () =>{}){
 
@@ -55,7 +55,7 @@ export class MonsterManager {
         this.enemyNodeNames = [];
         this.bossNodeName = "";
 
-        // TODO 需要修改为根据关卡加载怪物
+        // TODO 根据关卡配置加载怪物预制体
         const level = LevelConfig.getLevel();
         const normalNames = (level?.MonsterType ?? []).filter((name)=> !!name);
         const uniqueLoadNames = new Set<string>();
@@ -84,8 +84,8 @@ export class MonsterManager {
         });
     }
 
-    // 敌人使用动态避障方式移动
-    // 更新逻辑坐标
+    // 更新所有怪物的 RVO 期望速度
+    // 每帧驱动 RVO 避障模拟
     setPreferredVelocities(dt: number) {
         const palyer = MonsterManager.instance.player;
         if (palyer == undefined){
@@ -114,26 +114,27 @@ export class MonsterManager {
                 recycleGoalIds.push(monsterForOne.goalId);
                 continue;
             }
-            // 向主角移动坐标
+            // Move toward the player position
             posGoal.x = palyer.worldPosition.x;
             posGoal.y = palyer.worldPosition.z;
 
-            // 敌人角色终点位置 - 当前位置
+            // 计算怪物朝玩家方向的目标向量
             let goaPositon = agent.position_;
             let goalVector = posGoal.minus(goaPositon);
-            // 距离方差
+            // 计算到玩家的距离平方
             monsterForOne.distance = RVOMath.absSq(goalVector);
+            const runtimeSpeed = monsterForOne.rungameInfo.moveSpeed * Math.max(0.1, monsterForOne.runtimeMoveSpeedScale ?? 1);
             if(monsterForOne.distance > 1.0) {
-                // 没到终点，则设置移动
-                goalVector = RVOMath.normalize(goalVector).scale(monsterForOne.rungameInfo.moveSpeed);
+                // 将目标向量归一化并缩放为移动速度
+                goalVector = RVOMath.normalize(goalVector).scale(runtimeSpeed);
             }
 
             let rvo = RVOMath.absSq(goalVector)
             if (monsterForOne.currState != ActorState.Run || rvo < RVOMath.RVO_EPSILON) {
-                // Agent 已在目标半径内，即视为碰撞，将速度设为0
+                // Agent 处于非移动状态或速度过小，停止移动
                 Simulator.instance.setAgentPrefVelocity (entrie.id, new Vector2 (0.0, 0.0));
             }else {
-                // 没有检查到碰撞，则继续移动
+                // 向玩家方向移动，设置期望速度
                 Simulator.instance.setAgentPrefVelocity(entrie.id, goalVector);
             }
         }
@@ -151,7 +152,7 @@ export class MonsterManager {
             Simulator.instance.run(dt);
         }
 
-        // 更新渲染坐标
+        // 将 RVO 计算后的位置同步到怪物节点
         for(let goalId of Array.from(this.goalvoes.keys())) {
             let entrie = this.goalvoes.get(goalId);
             if (entrie){
@@ -194,7 +195,7 @@ export class MonsterManager {
             return null;
         }
 
-        // 等待加载
+        // 初始化 RVO 默认代理参数
         if (Simulator.instance.defaultAgent == null){
             Simulator.instance.setAgentDefaults(10, 4, 1, 0.1, 0.5, 15, new Vector2(0, 0));
         }
@@ -211,10 +212,10 @@ export class MonsterManager {
         node.getComponent(Collider).enabled = true;
 
         let monster = node.getComponent(Monster);
-        // 创建动态避障 agent
+        // 注册怪物到 RVO 仿真中作为 agent
         let p = new Vector2(spawnPos.x, spawnPos.z);
         let idx = Simulator.instance.addAgentByR(p, monster.goalSize*scale);
-        // 设置障碍角色质量
+        // 设置 agent 质量
         Simulator.instance.setAgentMass(idx, 1*scale);
         this.goalvoes.set(node.uuid, new IdVector(idx, node));
         monster.goalId = node.uuid;
@@ -228,16 +229,13 @@ export class MonsterManager {
         }
         node.off(OnOrEmitConst.OnDie, this.onEnemyDie, this);
         let actor = node.getComponent(Monster);
-
-        // 消除动态避障
         this.removeGoal(actor?.goalId);
 
-        // TODO 死亡特效
         EffectManager.instance.findEffectNode(EffectConst.EffDie, node.worldPosition);
         this.recycleEnemyNode(node);
     }
 
-    // 删除一个在动态避障里面的角色
+    // 从 RVO 仿真中移除怪物并清理映射
     removeGoal(goalId: string = null){
         if (!goalId) {
             return;
@@ -264,6 +262,7 @@ export class MonsterManager {
             monster.distance = 9999;
             monster.isElite = false;
             monster.isBoss = false;
+            monster.runtimeMoveSpeedScale = 1;
         }
         node.active = false;
         PoolManager.instance.putNode(node);

@@ -7,6 +7,8 @@ import { MonsterManager } from '../../managerGame/MonsterManager';
 import { GameStateInput } from '../../data/dynamicData/GameStateInput';
 import { MathUtil } from '../../utils/MathUtil';
 import { OnOrEmitConst } from '../../const/OnOrEmitConst';
+import { PlayerTs } from './PlayerTs';
+import { LevelConfig } from '../../const/LevelConfig';
 const { ccclass, property, requireComponent } = _decorator;
 const tempProjectileStart = v3();
 const tempEnemyPos = v3();
@@ -74,6 +76,14 @@ export class EnemyTS extends Component {
     @property
     eliteRangeProjectileCount: number = 5;
 
+    // 代码屎山维护负担强度（作用于主角攻击间隔倍率）
+    @property(CCFloat)
+    eliteBurdenScale: number = 1.3;
+
+    // 代码屎山维护负担持续时间（秒）
+    @property(CCFloat)
+    eliteBurdenDuration: number = 2.6;
+
     private baseAttackRange: number = 0;
     private baseAttackInterval: number = 0;
     private runtimeEliteConfigured = false;
@@ -86,6 +96,9 @@ export class EnemyTS extends Component {
         this.monster = this.node.getComponent(Monster);
         this.baseAttackRange = this.attackRange;
         this.baseAttackInterval = this.attackInterval;
+        const level = LevelConfig.getLevel();
+        this.eliteBurdenScale = level?.EliteBurdenScale ?? this.eliteBurdenScale;
+        this.eliteBurdenDuration = level?.EliteBurdenDuration ?? this.eliteBurdenDuration;
 
         this.node.on("onFrameAttack", this.onFrameAttack, this);
         this.schedule(this.excuteSAI, 1, macro.REPEAT_FOREVER, 1.0);
@@ -263,6 +276,7 @@ export class EnemyTS extends Component {
         if (isCrash) {
             // 碰撞造成自身防御值的伤害
             playerActor.hurt(hurtNumber, hurtDirection, this.node);
+            this.tryApplyMaintenanceBurden(target);
             this.node.getComponent(Monster).hurt(hurtNumber, v3(-hurtDirection.x, hurtDirection.y, -hurtDirection.z), target);
         }else {
             // 敌人与主角的距离
@@ -276,6 +290,7 @@ export class EnemyTS extends Component {
                 const angle = Vec3.angle(hurtDirection, this.node.forward);
                 if (angle < Math.PI){
                     playerActor.hurt(hurtNumber, hurtDirection, this.node);
+                    this.tryApplyMaintenanceBurden(target);
                 }
             }
         }
@@ -350,6 +365,17 @@ export class EnemyTS extends Component {
             this.attackInterval = this.baseAttackInterval;
             this.stopEliteDash();
         }
+    }
+
+    private tryApplyMaintenanceBurden(target: Node){
+        if (!this.monster?.isElite || !target){
+            return;
+        }
+        const playerTs = target.getComponent(PlayerTs);
+        if (!playerTs){
+            return;
+        }
+        playerTs.applyMaintenanceBurden(this.eliteBurdenScale, this.eliteBurdenDuration, "代码屎山");
     }
 }
 
