@@ -29,6 +29,7 @@
 | HUD/升级面板基础反馈 | 已完成第一版 | 已有升级三选一、职业提示、技能点变化、精英/Boss 提示。 | `assets/script/view/game/UIGameTs.ts` `assets/script/view/game/UIMaterInfoTS.ts` |
 | 死亡/GameOver 代码链 | 已完成 | 玩家死亡事件、GameOver 状态切换、结算页面、评分评级、重开流程已全部接通。 | `assets/script/managerGame/Actor.ts` `assets/script/view/game/PlayerTs.ts` `assets/script/view/game/UIGameTs.ts` |
 | 结算页产品化 | 已完成第一版 | 死亡后展示完整结算面板：职业信息、生存时间、击杀统计、评分评级（D-SS）、重新开始/返回首页按钮。 | `assets/script/view/game/UIGameTs.ts` `assets/script/view/game/level.ts` |
+| 局外认证点原型（M1） | 已完成 | 已接入结算发放、MySQL（Docker）持久化、首页累计展示，并补同局防重复结算。 | `assets/script/const/MetaProgressConfig.ts` `assets/script/managerGame/MetaProgressApi.ts` `assets/script/view/game/UIGameTs.ts` `server/src/index.js` |
 | 战斗统计系统 | 已完成第一版 | `level.ts` 新增本局统计追踪（精英击杀、Boss 击杀、事件触发次数、最高等级），`PlayerTs.ts` 暴露击杀数据接口。 | `assets/script/view/game/level.ts` `assets/script/view/game/PlayerTs.ts` |
 | 代码注释清理 | 已完成 | 清理了 `PlayerTs.ts`、`MonsterManager.ts` 中所有乱码注释，替换为有意义的中文注释。 | `assets/script/view/game/PlayerTs.ts` `assets/script/managerGame/MonsterManager.ts` |
 | 关键脚本编译修复 | 已完成 | `UIGameTs.ts`、`level.ts` 等关键脚本的语法阻断已修复，项目脚本本地冒烟无阻断。 | `assets/script/view/game/UIGameTs.ts` `assets/script/view/game/level.ts` |
@@ -47,7 +48,7 @@
 ### 2.3 未完成 / 后续版本
 | 模块 | 状态 | 说明 |
 |---|---|---|
-| 局外成长 | 未开始 | 认证点、职业熟练度、工具链熟练度、局外解锁还没接。 |
+| 局外成长 | 已完成 M1 | 已完成认证点最小闭环（结算发放、MySQL 持久化、首页展示）；M2 职业熟练度、工具链熟练度、局外解锁未开始。 |
 | 章节/关卡体系 | 未开始 | 目前仍以单地图长局为主，没有 `校招季 / 大促夜 / 上线周` 等章节。 |
 | 主动技能系统 | 已完成第一版 | 6 职业主动技能已落地，消耗 2 技能点解锁，有冷却/持续时间/效果恢复。后续补 UI 按钮。 |
 | 结算产品化 | 已完成第一版 | 结算面板已接入：展示职业、生存时间、击杀数、评分评级（D-SS）、重开按钮。后续补视觉包装和局外资源结算。 |
@@ -97,7 +98,7 @@
 ### 4.2 还不能提前算完成的部分
 - 还没有完成一轮编辑器内长局实机回归，所以不能把 `数值稳定`、`HUD 无遮挡` 直接算成全完成。
 - 结算页视觉包装不足，当前为纯文本 Label，正式发布前需补 UI 美术。
-- 还没做局外成长，当前版本仍是 `核心战斗闭环已成型，局外系统待建`。
+- 局外成长已完成 M1 最小闭环（认证点累计 + MySQL 持久化 + 首页展示），但 M2 职业熟练度和局外解锁仍待实现。
 
 ## 5. 自我分析与纠偏
 - 问题 1：之前的计划累积了太多阶段日志，开发时很难快速看出 `什么已经真做了`、`什么只是规划`。
@@ -236,10 +237,11 @@
 - 已完成（2026-04-13）：新增中局事件 `代码 Review`——300 秒起每 100 秒触发，随机标记 3 只普通怪为"问题代码"（放大 1.25 倍），击杀后获得双倍经验，15 秒后标记过期。
 - 已完成（2026-04-13）：主动技能系统第一版——6 职业各有 1 个主动技能，消耗 2 技能点解锁，有冷却/持续时间/效果恢复。前端热更新、后端全链路压测、产品需求冻结、项目风险预案、测试全量回归、实施现场救火。
 - 已完成（2026-04-13）：新增 `OnActiveSkillUnlocked` / `OnActiveSkillCast` / `OnActiveSkillReady` / `OnTechDebtAuraStack` / `OnCodeReviewKill` 事件常量。
-- 进行中：主动技能 UI 按钮、技能冷却显示、技能释放提示还未接入 UIGameTs。
+- 已完成（2026-04-13）：主动技能 UI 按钮、技能冷却显示、技能释放提示已接入 `UIGameTs.ts`。
 - 已完成（2026-04-13）：修复升级死锁 Bug——`presentUpgradeChoices` 返回空选项时不再吞掉升级事件，`tryPresentQueuedUpgrade` 改为 while 循环跳过无效升级，`update` 增加安全兜底恢复 Running 状态。
 - 已完成（2026-04-13）：主动技能 UI 接入——Q 键释放主动技能，升级面板中出现"解锁主动技能"选项（权重 3.0），HUD 显示技能状态/冷却/就绪。
 - 已完成（2026-04-13）：新增事件 HUD 提示——技术债利息叠层、代码 Review 标记、主动技能释放/就绪/解锁均有运行时通知。
+- 已完成（2026-04-13）：局外认证点原型 M1——结算发放认证点（D/C/B/A/S/SS = 1/3/6/10/15/25）、MySQL（Docker）持久化、首页累计摘要展示、同局防重复结算。代码落点：`assets/script/view/game/UIGameTs.ts`、`assets/script/const/MetaProgressConfig.ts`、`assets/script/managerGame/MetaProgressApi.ts`、`server/src/index.js`。
 
 ## 10. 计划维护规则
 - 每完成一个阶段，必须立即回写 `PLAN.md`。
@@ -335,6 +337,12 @@
   - Lv.2（使用 8 次）：该职业专属升级选项权重 +15%
   - Lv.3（使用 15 次）：解锁该职业的"终极被动"
 
+#### M2 预案占位（下一阶段，不在本阶段实现）
+- 目标：接入职业熟练度最小闭环，完成每职业局数与历史最高评级统计。
+- 数据结构：在局外存档中新增职业维度统计（`playCount`、`bestGrade`、`bestScore`）。
+- 触发时机：结算页完成评级后按当前职业写入统计，并在首页增加“当前职业熟练度摘要”。
+- 奖励占位：先保留阈值规则（3/8/15 次），本阶段只写规划，不落地数值效果。
+
 ### 11.5 主动技能系统
 
 #### 设计原则
@@ -392,7 +400,7 @@
 | 5 | ~~主动技能槽原型：6 个职业均可通过技能点解锁主动技能~~ | P1 | `PlayerTs.ts` `TechTreeConfig.ts` `OnOrEmitConst.ts` | **已完成** |
 | 6 | ~~咖啡/能量饮料掉落物：普通怪低概率掉落回复/增益道具~~ | P1 | `level.ts` `PlayerTs.ts` | **已完成** |
 | 7 | 结算页视觉包装：补背景、卡片布局、亮点展示 | P2 | `UIGameTs.ts` | 已完成基础版 |
-| 8 | 局外认证点原型：结算后累计认证点，首页展示 | P2 | 新增 `MetaProgressConfig.ts` `UIGameTs.ts` | 未开始 |
+| 8 | 局外认证点原型：结算后累计认证点，首页展示 | P2 | 新增 `MetaProgressConfig.ts` `MetaProgressApi.ts` `UIGameTs.ts` `server/src/index.js` | **已完成（M1）** |
 | 9 | ~~主动技能 UI：Q 键释放、升级面板解锁选项、HUD 状态显示~~ | P1 | `UIGameTs.ts` | **已完成** |
 | 10 | ~~新增"需求变更单"精英怪：S 形走位~~ | P1 | `level.ts` `EnemyTS.ts` `LevelConfig.ts` | **已完成** |
 | 11 | ~~新增"代码 Review"中局事件：标记怪物双倍经验~~ | P1 | `level.ts` `Monster.ts` | **已完成** |

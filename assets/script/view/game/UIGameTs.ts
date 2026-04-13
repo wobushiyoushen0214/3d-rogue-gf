@@ -2,10 +2,21 @@
 import { _decorator, BlockInputEvents, Button, Color, Component, director, EventKeyboard, Graphics, Input, input, KeyCode, Label, Layers, Node, Size, UITransform, Vec3 } from 'cc';
 import { CareerRoleConfigs, CareerRoleId, CareerSpecializationOrder, CareerSpecializationUnlockLevel } from '../../const/CareerConfig';
 import { GameStateEnum } from '../../const/GameStateEnum';
+import {
+    META_PROGRESS_DEFAULT_PLAYER_ID,
+    MetaProgressSave,
+    SettlementGrade,
+    compareSettlementGrade,
+    createDefaultMetaProgress,
+    getCertificationPointByGrade,
+    normalizeSettlementGrade,
+    sanitizeMetaProgressSave,
+} from '../../const/MetaProgressConfig';
 import { OnOrEmitConst } from '../../const/OnOrEmitConst';
 import { CareerBranchId, CareerMilestoneId, CareerTechBranchConfig, CareerTechTreeConfigs, CareerActiveSkillConfigs } from '../../const/TechTreeConfig';
 import { GameStateInput } from '../../data/dynamicData/GameStateInput';
 import { VirtualInput } from '../../data/dynamicData/VirtualInput';
+import { MetaProgressApi } from '../../managerGame/MetaProgressApi';
 import { MonsterManager } from '../../managerGame/MonsterManager';
 import { Simulator } from '../../utils/RVO/Simulator';
 import { PlayerTs } from './PlayerTs';
@@ -109,6 +120,11 @@ export class UIGame extends Component {
         new Color(255, 160, 80, 255),   // S
         new Color(255, 100, 100, 255),  // SS
     ];
+    private metaProgress: MetaProgressSave = createDefaultMetaProgress();
+    private readonly metaPlayerId = META_PROGRESS_DEFAULT_PLAYER_ID;
+    private metaPersistQueue: Promise<void> = Promise.resolve();
+    private settlementRewardApplied = false;
+    private settlementRewardValue = 0;
 
     start() {
         this.btnSetting = this.node.getChildByPath('BtnSetting');
@@ -138,6 +154,7 @@ export class UIGame extends Component {
 
         this.bindOptionalDebugButtons();
         this.initRuntimeDebugHud();
+        this.loadMetaProgress();
         this.ensureStartPanels();
         this.ensureUpgradePanel();
         this.ensureSettlementPanel();
@@ -277,6 +294,9 @@ export class UIGame extends Component {
     }
 
     onGameOVer() {
+        if (GameStateInput.isGameOver()) {
+            return;
+        }
         this.hideStartPanels();
         this.hideUpgradePanel(false);
         this.pendingUpgradeLevels.length = 0;
@@ -773,7 +793,8 @@ export class UIGame extends Component {
             this.homeSummaryLabel.string =
                 `当前角色：${selectedRole.name}\n` +
                 `${this.getStartRoleSummary(this.selectedStartRoleId)}\n` +
-                `技术栈：${selectedRole.techStacks.join(' / ')}`;
+                `技术栈：${selectedRole.techStacks.join(' / ')}\n` +
+                `${this.getHomeMetaSummaryText()}`;
         }
         if (this.roleTitleLabel) {
             this.roleTitleLabel.string = '选择起始职业';
@@ -803,6 +824,65 @@ export class UIGame extends Component {
             return `成长路线：Lv.${CareerSpecializationUnlockLevel} 可转职，适合稳健开局。`;
         }
         return `${config.passiveName} | ${config.specialty}`;
+    }
+
+    private getHomeMetaSummaryText(): string {
+        if (this.metaProgress.totalRuns <= 0) {
+            return '认证点：0 | 累计局数：0 | 历史最佳：暂无';
+        }
+        return `认证点：${this.metaProgress.certificationPoint} | 累计局数：${this.metaProgress.totalRuns}\n` +
+            `历史最佳：${this.metaProgress.bestGrade}（${this.metaProgress.bestScore} 分）`;
+    }
+
+    private loadMetaProgress() {
+        this.metaProgress = createDefaultMetaProgress();
+        this.metaPersistQueue = this.metaPersistQueue.then(async () => {
+            try {
+                const progress = await MetaProgressApi.load(this.metaPlayerId);
+                this.metaProgress = sanitizeMetaProgressSave(progress);
+            } catch (error) {
+                console.warn('[UIGame] loadMetaProgress from db failed', error);
+                this.metaProgress = createDefaultMetaProgress();
+            } finally {
+                this.refreshStartPanelContent();
+            }
+        });
+    }
+
+    private saveMetaProgress() {
+        this.metaPersistQueue = this.metaPersistQueue.then(async () => {
+            try {
+                const snapshot = sanitizeMetaProgressSave(this.metaProgress);
+                const progress = await MetaProgressApi.save(this.metaPlayerId, snapshot);
+                this.metaProgress = sanitizeMetaProgressSave(progress);
+                this.refreshStartPanelContent();
+            } catch (error) {
+                console.warn('[UIGame] saveMetaProgress to db failed', error);
+            }
+        });
+    }
+
+    private applySettlementMetaProgress(
+        grade: SettlementGrade,
+        score: number,
+        maxLevel: number,
+        totalKills: number,
+        roleId: CareerRoleId,
+    ): number {
+        const normalizedGrade = normalizeSettlementGrade(grade);
+        const rewardPoint = getCertificationPointByGrade(normalizedGrade);
+        this.metaProgress.certificationPoint += rewardPoint;
+        this.metaProgress.totalRuns += 1;
+        this.metaProgress.bestScore = Math.max(this.metaProgress.bestScore, Math.floor(score));
+        if (compareSettlementGrade(normalizedGrade, this.metaProgress.bestGrade) > 0) {
+            this.metaProgress.bestGrade = normalizedGrade;
+        }
+        this.metaProgress.highestLevel = Math.max(this.metaProgress.highestLevel, Math.floor(maxLevel));
+        this.metaProgress.totalKills += Math.max(0, Math.floor(totalKills));
+        this.metaProgress.lastRoleId = roleId;
+        this.metaProgress.updatedAt = Date.now();
+        this.saveMetaProgress();
+        return rewardPoint;
     }
 
     private selectStartRoleByIndex(index: number) {
@@ -1593,6 +1673,18 @@ export class UIGame extends Component {
 
         // 计算评级
         const rating = this.calculateRating(elapsed, maxLevel, totalKills, eliteKills, bossKills);
+        if (!this.settlementRewardApplied) {
+            this.settlementRewardValue = this.applySettlementMetaProgress(
+                rating.grade,
+                rating.score,
+                maxLevel,
+                totalKills,
+                player?.getCareerRoleId() ?? 'student',
+            );
+            this.settlementRewardApplied = true;
+            this.refreshStartPanelContent();
+        }
+        const certPointReward = this.settlementRewardValue;
 
         // 设置标题
         this.settlementTitleLabel.string = '战斗结算';
@@ -1616,6 +1708,11 @@ export class UIGame extends Component {
             `剩余技能点：${skillPoint}\n` +
             `\n` +
             `综合评分：${rating.score} 分\n` +
+            `认证点奖励：+${certPointReward}\n` +
+            `累计认证点：${this.metaProgress.certificationPoint}\n` +
+            `累计对局：${this.metaProgress.totalRuns}\n` +
+            `历史最佳：${this.metaProgress.bestGrade}（${this.metaProgress.bestScore} 分）\n` +
+            `\n` +
             `${rating.comment}`;
 
         this.settlementPanel.active = true;
@@ -1633,7 +1730,7 @@ export class UIGame extends Component {
         totalKills: number,
         eliteKills: number,
         bossKills: number,
-    ): { score: number; grade: string; comment: string } {
+    ): { score: number; grade: SettlementGrade; comment: string } {
         // 生存时间分（最高 30 分）
         const timePart = Math.min(30, Math.floor(elapsed / 20));
         // 等级分（最高 25 分）
@@ -1645,7 +1742,7 @@ export class UIGame extends Component {
 
         const score = timePart + levelPart + killPart + elitePart;
 
-        let grade: string;
+        let grade: SettlementGrade = 'D';
         let comment: string;
         if (score >= 90) {
             grade = 'SS';
