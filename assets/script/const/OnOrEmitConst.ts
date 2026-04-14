@@ -145,4 +145,29 @@ export enum OnOrEmitConst{
       * 主动技能冷却完成
       */
      OnActiveSkillReady = "OnActiveSkillReady",
+
+     /**
+      * 护盾怪格挡攻击
+      */
+     OnShieldEnemyBlock = "OnShieldEnemyBlock",
+
+     /**
+      * 冲锋怪冲刺命中
+      */
+     OnChargeEnemyImpact = "OnChargeEnemyImpact",
+
+     /**
+      * 自爆怪爆炸
+      */
+     OnSelfDestructExplode = "OnSelfDestructExplode",
+
+     /**
+      * 特殊波次事件触发
+      */
+     OnSpecialWave = "OnSpecialWave",
+
+     /**
+      * 玩家被减速
+      */
+     OnPlayerSlowed = "OnPlayerSlowed",
 }

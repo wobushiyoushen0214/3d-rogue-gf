@@ -510,6 +510,107 @@ export class LevelConfigVo {
     ReqChangeZigzagInterval?: number;
     /** ReqChangeZigzagAngle(需求变更单变向角度 度) */
     ReqChangeZigzagAngle?: number;
+
+    /** TechShareUnlockTime(技术分享会首次触发时间 秒) */
+    TechShareUnlockTime?: number;
+    /** TechShareInterval(技术分享会触发间隔 秒) */
+    TechShareInterval?: number;
+    /** TechSharePickupCount(技术分享会拾取物数量) */
+    TechSharePickupCount?: number;
+    /** TechSharePickupRadius(技术分享会拾取物生成半径) */
+    TechSharePickupRadius?: number;
+    /** TechShareBuffDuration(技术分享会增益持续时间 秒) */
+    TechShareBuffDuration?: number;
+
+    // ---- 特殊波次 ----
+    /** SpecialWaveUnlockTime(特殊波次首次触发时间 秒) */
+    SpecialWaveUnlockTime?: number;
+    /** SpecialWaveInterval(特殊波次触发间隔 秒) */
+    SpecialWaveInterval?: number;
+    /** SpecialWaveCountMin(特殊波次最小数量) */
+    SpecialWaveCountMin?: number;
+    /** SpecialWaveCountMax(特殊波次最大数量) */
+    SpecialWaveCountMax?: number;
+
+    // 护盾怪
+    /** ShieldEnemyHPMultiplier(护盾怪血量倍率) */
+    ShieldEnemyHPMultiplier?: number;
+    /** ShieldEnemyAttackMultiplier(护盾怪攻击倍率) */
+    ShieldEnemyAttackMultiplier?: number;
+    /** ShieldEnemyMoveSpeedMultiplier(护盾怪移速倍率) */
+    ShieldEnemyMoveSpeedMultiplier?: number;
+    /** ShieldEnemyScaleMin(护盾怪缩放最小值) */
+    ShieldEnemyScaleMin?: number;
+    /** ShieldEnemyScaleMax(护盾怪缩放最大值) */
+    ShieldEnemyScaleMax?: number;
+
+    // 冲锋怪
+    /** ChargeEnemyHPMultiplier(冲锋怪血量倍率) */
+    ChargeEnemyHPMultiplier?: number;
+    /** ChargeEnemyAttackMultiplier(冲锋怪攻击倍率) */
+    ChargeEnemyAttackMultiplier?: number;
+    /** ChargeEnemyMoveSpeedMultiplier(冲锋怪移速倍率) */
+    ChargeEnemyMoveSpeedMultiplier?: number;
+    /** ChargeEnemyScaleMin(冲锋怪缩放最小值) */
+    ChargeEnemyScaleMin?: number;
+    /** ChargeEnemyScaleMax(冲锋怪缩放最大值) */
+    ChargeEnemyScaleMax?: number;
+    /** ChargeEnemyWindupTime(冲锋怪蓄力时间 秒) */
+    ChargeEnemyWindupTime?: number;
+    /** ChargeEnemyChargeDuration(冲锋怪冲刺持续时间 秒) */
+    ChargeEnemyChargeDuration?: number;
+    /** ChargeEnemySpeedMultiplier(冲锋怪冲刺速度倍率) */
+    ChargeEnemySpeedMultiplier?: number;
+    /** ChargeEnemyStunTime(冲锋怪硬直时间 秒) */
+    ChargeEnemyStunTime?: number;
+    /** ChargeEnemyCooldown(冲锋怪冲刺冷却 秒) */
+    ChargeEnemyCooldown?: number;
+
+    // 投射怪
+    /** ProjectileEnemyHPMultiplier(投射怪血量倍率) */
+    ProjectileEnemyHPMultiplier?: number;
+    /** ProjectileEnemyAttackMultiplier(投射怪攻击倍率) */
+    ProjectileEnemyAttackMultiplier?: number;
+    /** ProjectileEnemyMoveSpeedMultiplier(投射怪移速倍率) */
+    ProjectileEnemyMoveSpeedMultiplier?: number;
+    /** ProjectileEnemyScaleMin(投射怪缩放最小值) */
+    ProjectileEnemyScaleMin?: number;
+    /** ProjectileEnemyScaleMax(投射怪缩放最大值) */
+    ProjectileEnemyScaleMax?: number;
+    /** ProjectileEnemySlowAmount(投射怪减速量 0-1) */
+    ProjectileEnemySlowAmount?: number;
+    /** ProjectileEnemySlowDuration(投射怪减速持续时间 秒) */
+    ProjectileEnemySlowDuration?: number;
+
+    // 自爆怪
+    /** SelfDestructHPMultiplier(自爆怪血量倍率) */
+    SelfDestructHPMultiplier?: number;
+    /** SelfDestructAttackMultiplier(自爆怪攻击倍率) */
+    SelfDestructAttackMultiplier?: number;
+    /** SelfDestructMoveSpeedMultiplier(自爆怪移速倍率) */
+    SelfDestructMoveSpeedMultiplier?: number;
+    /** SelfDestructScaleMin(自爆怪缩放最小值) */
+    SelfDestructScaleMin?: number;
+    /** SelfDestructScaleMax(自爆怪缩放最大值) */
+    SelfDestructScaleMax?: number;
+    /** SelfDestructRadius(自爆怪引爆半径) */
+    SelfDestructRadius?: number;
+    /** SelfDestructFuseTime(自爆怪引信时间 秒) */
+    SelfDestructFuseTime?: number;
+    /** SelfDestructDamageMultiplier(自爆怪爆炸伤害倍率) */
+    SelfDestructDamageMultiplier?: number;
+
+    // ---- 新掉落物 ----
+    /** SnackSpawnInterval(工位零食刷新间隔 秒) */
+    SnackSpawnInterval?: number;
+    /** SnackHealPercent(工位零食回复生命百分比) */
+    SnackHealPercent?: number;
+    /** SnackMoveSpeedBonus(工位零食移速加成) */
+    SnackMoveSpeedBonus?: number;
+    /** SnackBuffDuration(工位零食增益持续时间 秒) */
+    SnackBuffDuration?: number;
+    /** CodeFragmentDropChance(代码片段掉落概率 0-1) */
+    CodeFragmentDropChance?: number;
+    /** CertBadgeDropFromBoss(Boss是否掉落认证徽章) */
+    CertBadgeDropFromBoss?: boolean;
 }
-
-

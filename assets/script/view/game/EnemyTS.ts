@@ -97,6 +97,26 @@ export class EnemyTS extends Component {
     private reqChangeZigzagTimer = 0;
     private reqChangeZigzagSign = 1;
 
+    // ---- 冲锋怪状态 ----
+    private chargeState: 'idle' | 'windup' | 'charging' | 'stunned' = 'idle';
+    private chargeWindupTime = 1.5;
+    private chargeDuration = 0.6;
+    private chargeSpeedMultiplier = 4.0;
+    private chargeStunTime = 1.5;
+    private chargeTimer = 0;
+    private chargeCooldown = 6.0;
+    private chargeLastTime = 0;
+    private chargeDirection = v3();
+    private chargeBaseMoveSpeed = 0;
+
+    // ---- 自爆怪状态 ----
+    private selfDestructFuseTime = 1.5;
+    private selfDestructRadius = 3.0;
+    private selfDestructDamageMultiplier = 3.0;
+    private selfDestructFuseTimer = 0;
+    private selfDestructFuseActive = false;
+    private selfDestructFlashTimer = 0;
+
     start() {
 
         this.monster = this.node.getComponent(Monster);
@@ -107,6 +127,18 @@ export class EnemyTS extends Component {
         this.eliteBurdenDuration = level?.EliteBurdenDuration ?? this.eliteBurdenDuration;
         this.reqChangeZigzagInterval = level?.ReqChangeZigzagInterval ?? this.reqChangeZigzagInterval;
         this.reqChangeZigzagAngle = level?.ReqChangeZigzagAngle ?? this.reqChangeZigzagAngle;
+
+        // 冲锋怪配置
+        this.chargeWindupTime = level?.ChargeEnemyWindupTime ?? 1.5;
+        this.chargeDuration = level?.ChargeEnemyChargeDuration ?? 0.6;
+        this.chargeSpeedMultiplier = level?.ChargeEnemySpeedMultiplier ?? 4.0;
+        this.chargeStunTime = level?.ChargeEnemyStunTime ?? 1.5;
+        this.chargeCooldown = level?.ChargeEnemyCooldown ?? 6.0;
+
+        // 自爆怪配置
+        this.selfDestructFuseTime = level?.SelfDestructFuseTime ?? 1.5;
+        this.selfDestructRadius = level?.SelfDestructRadius ?? 3.0;
+        this.selfDestructDamageMultiplier = level?.SelfDestructDamageMultiplier ?? 3.0;
 
         this.node.on("onFrameAttack", this.onFrameAttack, this);
         this.schedule(this.excuteSAI, 1, macro.REPEAT_FOREVER, 1.0);
@@ -124,6 +156,12 @@ export class EnemyTS extends Component {
         this.eliteDashBaseMoveSpeed = 0;
         this.reqChangeZigzagTimer = 0;
         this.reqChangeZigzagSign = 1;
+        this.chargeState = 'idle';
+        this.chargeTimer = 0;
+        this.chargeLastTime = 0;
+        this.selfDestructFuseTimer = 0;
+        this.selfDestructFuseActive = false;
+        this.selfDestructFlashTimer = 0;
     }
 
     onDestroy() {
@@ -146,6 +184,16 @@ export class EnemyTS extends Component {
                 this.reqChangeZigzagTimer = 0;
                 this.reqChangeZigzagSign *= -1;
             }
+        }
+
+        // 冲锋怪状态机
+        if (this.monster.isChargeEnemy && this.monster.currState !== ActorState.Die) {
+            this.updateChargeEnemy(deltaTime);
+        }
+
+        // 自爆怪引信
+        if (this.monster.isSelfDestruct && this.monster.currState !== ActorState.Die) {
+            this.updateSelfDestruct(deltaTime);
         }
 
         if (!this.monster.isElite){
@@ -174,6 +222,16 @@ export class EnemyTS extends Component {
             return;
         }
         this.syncEliteRuntimeConfig();
+
+        // 冲锋怪在非 idle 状态时不走普通 AI
+        if (this.monster.isChargeEnemy && this.chargeState !== 'idle') {
+            return;
+        }
+
+        // 自爆怪引信激活后不走普通 AI
+        if (this.monster.isSelfDestruct && this.selfDestructFuseActive) {
+            return;
+        }
 
         let target = MonsterManager.instance.player;
         if (target == null){
@@ -412,6 +470,142 @@ export class EnemyTS extends Component {
             return;
         }
         playerTs.applyMaintenanceBurden(this.eliteBurdenScale, this.eliteBurdenDuration, "代码屎山");
+    }
+
+    // ---- 冲锋怪行为 ----
+    private updateChargeEnemy(deltaTime: number) {
+        const target = MonsterManager.instance.player;
+        if (!target) {
+            return;
+        }
+
+        switch (this.chargeState) {
+            case 'idle': {
+                const distance = Vec3.distance(this.node.worldPosition, target.worldPosition);
+                const canCharge = game.totalTime - this.chargeLastTime >= this.chargeCooldown;
+                if (canCharge && distance < 12 && distance > this.attackRange) {
+                    this.chargeState = 'windup';
+                    this.chargeTimer = this.chargeWindupTime;
+                    this.monster.stopMove();
+                    // 蓄力视觉：缩放脉冲
+                    const s = this.node.scale;
+                    this.node.setScale(s.x * 0.9, s.y * 1.15, s.z * 0.9);
+                }
+                break;
+            }
+            case 'windup': {
+                this.chargeTimer -= deltaTime;
+                // 蓄力期间持续面朝玩家
+                Vec3.subtract(this.monster.input, target.worldPosition, this.node.worldPosition);
+                this.monster.input.y = 0;
+                this.monster.input.normalize();
+                if (this.chargeTimer <= 0) {
+                    // 记录冲刺方向
+                    Vec3.copy(this.chargeDirection, this.monster.input);
+                    this.chargeState = 'charging';
+                    this.chargeTimer = this.chargeDuration;
+                    this.chargeBaseMoveSpeed = Math.max(this.monster.rungameInfo.moveSpeed, 0.1);
+                    this.monster.rungameInfo.moveSpeed = this.chargeBaseMoveSpeed * this.chargeSpeedMultiplier;
+                    // 恢复缩放
+                    const s = this.node.scale;
+                    this.node.setScale(s.x / 0.9, s.y / 1.15, s.z / 0.9);
+                }
+                break;
+            }
+            case 'charging': {
+                this.chargeTimer -= deltaTime;
+                // 沿固定方向冲刺
+                this.monster.input.set(this.chargeDirection);
+                this.monster.changeState(ActorState.Run);
+                // 检测是否命中玩家
+                const dist = Vec3.distance(this.node.worldPosition, target.worldPosition);
+                if (dist < this.attackRange * 1.2) {
+                    this.hurtPlayer(this.monster.rungameInfo.attack * 1.5, false);
+                    director.getScene()?.emit(OnOrEmitConst.OnChargeEnemyImpact, this.node.worldPosition);
+                    this.enterChargeStun();
+                    return;
+                }
+                if (this.chargeTimer <= 0) {
+                    this.enterChargeStun();
+                }
+                break;
+            }
+            case 'stunned': {
+                this.chargeTimer -= deltaTime;
+                this.monster.stopMove();
+                if (this.chargeTimer <= 0) {
+                    this.chargeState = 'idle';
+                    this.chargeLastTime = game.totalTime;
+                }
+                break;
+            }
+        }
+    }
+
+    private enterChargeStun() {
+        this.chargeState = 'stunned';
+        this.chargeTimer = this.chargeStunTime;
+        if (this.chargeBaseMoveSpeed > 0) {
+            this.monster.rungameInfo.moveSpeed = this.chargeBaseMoveSpeed;
+        }
+        this.monster.stopMove();
+        this.monster.changeState(ActorState.Idle);
+    }
+
+    // ---- 自爆怪行为 ----
+    private updateSelfDestruct(deltaTime: number) {
+        const target = MonsterManager.instance.player;
+        if (!target) {
+            return;
+        }
+
+        const distance = Vec3.distance(this.node.worldPosition, target.worldPosition);
+
+        if (!this.selfDestructFuseActive) {
+            // 接近玩家时启动引信
+            if (distance < this.selfDestructRadius) {
+                this.selfDestructFuseActive = true;
+                this.selfDestructFuseTimer = this.selfDestructFuseTime;
+                this.selfDestructFlashTimer = 0;
+                this.monster.stopMove();
+            }
+            return;
+        }
+
+        // 引信倒计时
+        this.selfDestructFuseTimer -= deltaTime;
+        // 闪烁视觉提示
+        this.selfDestructFlashTimer += deltaTime;
+        const flashRate = Math.max(0.1, this.selfDestructFuseTimer * 0.3);
+        const isFlashOn = Math.floor(this.selfDestructFlashTimer / flashRate) % 2 === 0;
+        const baseScale = this.node.scale.x > 0 ? Math.abs(this.node.scale.x) : 1;
+        const flashScale = isFlashOn ? 1.15 : 0.9;
+        this.node.setScale(baseScale * flashScale, baseScale * flashScale, baseScale * flashScale);
+
+        if (this.selfDestructFuseTimer <= 0) {
+            this.executeSelfDestruct();
+        }
+    }
+
+    private executeSelfDestruct() {
+        const target = MonsterManager.instance.player;
+        if (target) {
+            const distance = Vec3.distance(this.node.worldPosition, target.worldPosition);
+            if (distance < this.selfDestructRadius) {
+                const damage = this.monster.rungameInfo.attack * this.selfDestructDamageMultiplier;
+                const hurtDir = v3();
+                Vec3.subtract(hurtDir, target.worldPosition, this.node.worldPosition);
+                hurtDir.normalize();
+                const playerActor = target.getComponent(Actor);
+                if (playerActor) {
+                    playerActor.hurt(damage, hurtDir, this.node);
+                }
+            }
+        }
+        director.getScene()?.emit(OnOrEmitConst.OnSelfDestructExplode, this.node.worldPosition);
+        // 自爆后自身死亡
+        this.monster.rungameInfo.Hp = 0;
+        this.monster.onDie();
     }
 }
 

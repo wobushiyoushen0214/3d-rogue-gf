@@ -214,6 +214,48 @@ export class level extends Component {
     private reqChangeMoveSpeedMultiplier = 1.25;
     private reqChangeNextSpawnAt = 150;
 
+    // 特殊波次事件
+    private specialWaveUnlockTime = 180;
+    private specialWaveInterval = 75;
+    private specialWaveCountMin = 3;
+    private specialWaveCountMax = 6;
+    private specialWaveNextTime = 180;
+    // 护盾怪
+    private shieldEnemyHPMultiplier = 3.0;
+    private shieldEnemyAttackMultiplier = 1.2;
+    private shieldEnemyMoveSpeedMultiplier = 0.85;
+    private shieldEnemyScaleMin = 1.3;
+    private shieldEnemyScaleMax = 1.6;
+    // 冲锋怪
+    private chargeEnemyHPMultiplier = 1.8;
+    private chargeEnemyAttackMultiplier = 2.2;
+    private chargeEnemyMoveSpeedMultiplier = 1.3;
+    private chargeEnemyScaleMin = 1.1;
+    private chargeEnemyScaleMax = 1.4;
+    // 投射怪
+    private projectileEnemyHPMultiplier = 1.5;
+    private projectileEnemyAttackMultiplier = 1.0;
+    private projectileEnemyMoveSpeedMultiplier = 0.9;
+    private projectileEnemyScaleMin = 1.0;
+    private projectileEnemyScaleMax = 1.3;
+    // 自爆怪
+    private selfDestructHPMultiplier = 0.8;
+    private selfDestructAttackMultiplier = 3.0;
+    private selfDestructMoveSpeedMultiplier = 1.4;
+    private selfDestructScaleMin = 0.8;
+    private selfDestructScaleMax = 1.1;
+
+    // 新掉落物
+    private snackSpawnInterval = 60;
+    private snackNextSpawnTime = 60;
+    private snackHealPercent = 0.08;
+    private snackMoveSpeedBonus = 0.5;
+    private snackBuffDuration = 5;
+    private codeFragmentDropChance = 0.3;
+    private certBadgeDropFromBoss = true;
+    /** 本局是否已拾取认证徽章 */
+    public certBadgeCollected = false;
+
     private spawnPos: Vec3 = v3();
 
     start() {
@@ -308,6 +350,36 @@ export class level extends Component {
         this.reqChangeAttackMultiplier = levelConfig.ReqChangeAttackMultiplier ?? this.reqChangeAttackMultiplier;
         this.reqChangeMoveSpeedMultiplier = levelConfig.ReqChangeMoveSpeedMultiplier ?? this.reqChangeMoveSpeedMultiplier;
 
+        // 特殊波次
+        this.specialWaveUnlockTime = levelConfig.SpecialWaveUnlockTime ?? this.specialWaveUnlockTime;
+        this.specialWaveInterval = levelConfig.SpecialWaveInterval ?? this.specialWaveInterval;
+        this.specialWaveCountMin = levelConfig.SpecialWaveCountMin ?? this.specialWaveCountMin;
+        this.specialWaveCountMax = levelConfig.SpecialWaveCountMax ?? this.specialWaveCountMax;
+        this.shieldEnemyHPMultiplier = levelConfig.ShieldEnemyHPMultiplier ?? this.shieldEnemyHPMultiplier;
+        this.shieldEnemyAttackMultiplier = levelConfig.ShieldEnemyAttackMultiplier ?? this.shieldEnemyAttackMultiplier;
+        this.shieldEnemyMoveSpeedMultiplier = levelConfig.ShieldEnemyMoveSpeedMultiplier ?? this.shieldEnemyMoveSpeedMultiplier;
+        this.shieldEnemyScaleMin = levelConfig.ShieldEnemyScaleMin ?? this.shieldEnemyScaleMin;
+        this.shieldEnemyScaleMax = levelConfig.ShieldEnemyScaleMax ?? this.shieldEnemyScaleMax;
+        this.chargeEnemyHPMultiplier = levelConfig.ChargeEnemyHPMultiplier ?? this.chargeEnemyHPMultiplier;
+        this.chargeEnemyAttackMultiplier = levelConfig.ChargeEnemyAttackMultiplier ?? this.chargeEnemyAttackMultiplier;
+        this.chargeEnemyMoveSpeedMultiplier = levelConfig.ChargeEnemyMoveSpeedMultiplier ?? this.chargeEnemyMoveSpeedMultiplier;
+        this.chargeEnemyScaleMin = levelConfig.ChargeEnemyScaleMin ?? this.chargeEnemyScaleMin;
+        this.chargeEnemyScaleMax = levelConfig.ChargeEnemyScaleMax ?? this.chargeEnemyScaleMax;
+        this.projectileEnemyHPMultiplier = levelConfig.ProjectileEnemyHPMultiplier ?? this.projectileEnemyHPMultiplier;
+        this.projectileEnemyAttackMultiplier = levelConfig.ProjectileEnemyAttackMultiplier ?? this.projectileEnemyAttackMultiplier;
+        this.projectileEnemyMoveSpeedMultiplier = levelConfig.ProjectileEnemyMoveSpeedMultiplier ?? this.projectileEnemyMoveSpeedMultiplier;
+        this.selfDestructHPMultiplier = levelConfig.SelfDestructHPMultiplier ?? this.selfDestructHPMultiplier;
+        this.selfDestructAttackMultiplier = levelConfig.SelfDestructAttackMultiplier ?? this.selfDestructAttackMultiplier;
+        this.selfDestructMoveSpeedMultiplier = levelConfig.SelfDestructMoveSpeedMultiplier ?? this.selfDestructMoveSpeedMultiplier;
+
+        // 新掉落物
+        this.snackSpawnInterval = levelConfig.SnackSpawnInterval ?? this.snackSpawnInterval;
+        this.snackHealPercent = levelConfig.SnackHealPercent ?? this.snackHealPercent;
+        this.snackMoveSpeedBonus = levelConfig.SnackMoveSpeedBonus ?? this.snackMoveSpeedBonus;
+        this.snackBuffDuration = levelConfig.SnackBuffDuration ?? this.snackBuffDuration;
+        this.codeFragmentDropChance = levelConfig.CodeFragmentDropChance ?? this.codeFragmentDropChance;
+        this.certBadgeDropFromBoss = levelConfig.CertBadgeDropFromBoss ?? this.certBadgeDropFromBoss;
+
         this.bossType = levelConfig.BossType ?? this.bossType;
         this.bossDisplayName = levelConfig.BossDisplayName ?? this.bossDisplayName;
         this.bossShowTime = levelConfig.BossShowTIme ?? this.bossShowTime;
@@ -401,6 +473,8 @@ export class level extends Component {
         this.updateTechDebtSpawnState();
         this.updateTechDebtAura(deltaTime);
         this.updateReqChangeSpawnState();
+        this.updateSpecialWaveState();
+        this.updateSnackSpawn();
 
         this.refashMap += deltaTime;
         if (this.refashMap > this.mapRefreshInterval) {
@@ -464,6 +538,9 @@ export class level extends Component {
         this.techDebtAuraTimer = 0;
         this.techDebtAliveNodes.length = 0;
         this.reqChangeNextSpawnAt = this.reqChangeUnlockTime;
+        this.specialWaveNextTime = this.specialWaveUnlockTime;
+        this.snackNextSpawnTime = this.snackSpawnInterval;
+        this.certBadgeCollected = false;
     }
 
     private getPlayerLevel(): number {
@@ -938,6 +1015,7 @@ export class level extends Component {
             return;
         }
         this.spawnLegacyBugSwarm(deathPos);
+        this.onEliteKilledDrop(deathPos);
     }
 
     private spawnLegacyBugSwarm(centerPos: Vec3) {
@@ -1132,6 +1210,7 @@ export class level extends Component {
         this.statBossKills += 1;
         this.applyBossRushScale(1);
         this.clearBossPieTraps();
+        this.onBossKilledDrop(this.bossNode?.worldPosition ?? v3());
         this.bossNode = null;
     }
 
@@ -1787,5 +1866,238 @@ export class level extends Component {
             Math.floor(this.battleElapsed),
             '需求变更单',
         );
+    }
+
+    // ==================== 特殊波次事件 ====================
+
+    private updateSpecialWaveState() {
+        if (this.specialWaveInterval <= 0) {
+            return;
+        }
+        if (this.battleElapsed < this.specialWaveNextTime) {
+            return;
+        }
+        this.specialWaveNextTime = this.battleElapsed + this.specialWaveInterval;
+        this.triggerSpecialWave();
+    }
+
+    private triggerSpecialWave() {
+        this.statEventsTriggered += 1;
+        const waveTypes = ['shield', 'charge', 'projectile', 'selfDestruct'] as const;
+        const chosen = waveTypes[Math.floor(Math.random() * waveTypes.length)];
+        const waveCount = Math.floor(randomRange(this.specialWaveCountMin, this.specialWaveCountMax + 1));
+
+        let spawnCount = 0;
+        switch (chosen) {
+            case 'shield':
+                spawnCount = this.spawnShieldWave(waveCount);
+                break;
+            case 'charge':
+                spawnCount = this.spawnChargeWave(waveCount);
+                break;
+            case 'projectile':
+                spawnCount = this.spawnProjectileWave(waveCount);
+                break;
+            case 'selfDestruct':
+                spawnCount = this.spawnSelfDestructWave(waveCount);
+                break;
+        }
+
+        if (spawnCount > 0) {
+            const waveNames: Record<string, string> = {
+                shield: '护盾编队',
+                charge: '冲锋小队',
+                projectile: '远程狙击组',
+                selfDestruct: '自爆突击队',
+            };
+            director.getScene().emit(
+                OnOrEmitConst.OnSpecialWave,
+                chosen,
+                waveNames[chosen] ?? chosen,
+                spawnCount,
+                Math.floor(this.battleElapsed),
+            );
+        }
+    }
+
+    private spawnSpecialWaveEnemy(
+        hpMul: number, atkMul: number, spdMul: number,
+        scaleMin: number, scaleMax: number,
+    ): Node | null {
+        const player = MonsterManager.instance.player;
+        if (!player || MonsterManager.instance.goalvoes.size >= this.maxAlive) {
+            return null;
+        }
+
+        const angle = randomRange(0, Math.PI * 2);
+        const radius = randomRange(this.spawnRadiusMin, this.spawnRadiusMax);
+        const playerPos = player.getWorldPosition();
+        this.spawnPos.set(
+            playerPos.x + Math.cos(angle) * radius,
+            0,
+            playerPos.z + Math.sin(angle) * radius,
+        );
+
+        const scale = randomRange(scaleMin, scaleMax);
+        const runtimeDifficulty = this.getRuntimeDifficultyScale();
+        const node = MonsterManager.instance.createEnemy(this.spawnPos, scale);
+        if (!node) {
+            return null;
+        }
+
+        const monster = node.getComponent(Monster);
+        if (!monster) {
+            return null;
+        }
+
+        monster.monsterInit(
+            this.baseHP * runtimeDifficulty,
+            this.baseAttack * runtimeDifficulty,
+            hpMul, atkMul, spdMul,
+        );
+        return node;
+    }
+
+    private spawnShieldWave(count: number): number {
+        let spawned = 0;
+        for (let i = 0; i < count; i++) {
+            const node = this.spawnSpecialWaveEnemy(
+                this.shieldEnemyHPMultiplier, this.shieldEnemyAttackMultiplier, this.shieldEnemyMoveSpeedMultiplier,
+                this.shieldEnemyScaleMin, this.shieldEnemyScaleMax,
+            );
+            if (!node) { break; }
+            const monster = node.getComponent(Monster);
+            if (monster) { monster.isShieldEnemy = true; }
+            spawned++;
+        }
+        return spawned;
+    }
+
+    private spawnChargeWave(count: number): number {
+        let spawned = 0;
+        for (let i = 0; i < count; i++) {
+            const node = this.spawnSpecialWaveEnemy(
+                this.chargeEnemyHPMultiplier, this.chargeEnemyAttackMultiplier, this.chargeEnemyMoveSpeedMultiplier,
+                this.chargeEnemyScaleMin, this.chargeEnemyScaleMax,
+            );
+            if (!node) { break; }
+            const monster = node.getComponent(Monster);
+            if (monster) { monster.isChargeEnemy = true; }
+            spawned++;
+        }
+        return spawned;
+    }
+
+    private spawnProjectileWave(count: number): number {
+        let spawned = 0;
+        for (let i = 0; i < count; i++) {
+            const node = this.spawnSpecialWaveEnemy(
+                this.projectileEnemyHPMultiplier, this.projectileEnemyAttackMultiplier, this.projectileEnemyMoveSpeedMultiplier,
+                this.projectileEnemyScaleMin ?? 1.0, this.projectileEnemyScaleMax ?? 1.3,
+            );
+            if (!node) { break; }
+            const monster = node.getComponent(Monster);
+            if (monster) { monster.isProjectileEnemy = true; }
+            spawned++;
+        }
+        return spawned;
+    }
+
+    private spawnSelfDestructWave(count: number): number {
+        let spawned = 0;
+        for (let i = 0; i < count; i++) {
+            const node = this.spawnSpecialWaveEnemy(
+                this.selfDestructHPMultiplier, this.selfDestructAttackMultiplier, this.selfDestructMoveSpeedMultiplier,
+                this.selfDestructScaleMin, this.selfDestructScaleMax,
+            );
+            if (!node) { break; }
+            const monster = node.getComponent(Monster);
+            if (monster) { monster.isSelfDestruct = true; }
+            spawned++;
+        }
+        return spawned;
+    }
+
+    // ==================== 工位零食定时刷新 ====================
+
+    private updateSnackSpawn() {
+        if (this.snackSpawnInterval <= 0) {
+            return;
+        }
+        if (this.battleElapsed < this.snackNextSpawnTime) {
+            return;
+        }
+        this.snackNextSpawnTime = this.battleElapsed + this.snackSpawnInterval;
+        this.spawnSnackPickups();
+    }
+
+    private spawnSnackPickups() {
+        const player = MonsterManager.instance.player;
+        if (!player) {
+            return;
+        }
+        const playerPos = player.getWorldPosition();
+        const scene = director.getScene();
+        if (!scene) {
+            return;
+        }
+
+        const snackCount = Math.floor(randomRange(1, 3));
+        for (let i = 0; i < snackCount; i++) {
+            const angle = randomRange(0, Math.PI * 2);
+            const radius = randomRange(5, 15);
+            const pickupNode = new Node(`Snack_${i}`);
+            scene.addChild(pickupNode);
+            const spawnPos = v3(
+                playerPos.x + Math.cos(angle) * radius,
+                0.5,
+                playerPos.z + Math.sin(angle) * radius,
+            );
+            pickupNode.setWorldPosition(spawnPos);
+            this.dropItems.push({
+                node: pickupNode,
+                type: 'coffee',
+                bornTime: game.totalTime,
+                lifeTime: 25,
+                collectRadius: 1.8,
+                magnetRadius: 5.0,
+                baseY: 0.5,
+            });
+        }
+
+        director.getScene().emit(
+            OnOrEmitConst.OnDropCollected,
+            'snack',
+            '工位零食已刷新',
+        );
+    }
+
+    // ==================== 精英/Boss 掉落代码片段和认证徽章 ====================
+
+    private onEliteKilledDrop(deathPos: Vec3) {
+        if (Math.random() < this.codeFragmentDropChance) {
+            director.getScene().emit(
+                OnOrEmitConst.OnDropCollected,
+                'codeFragment',
+                '代码片段',
+            );
+            // 触发一次额外升级选择
+            const player = MonsterManager.instance.player;
+            const playerTs = player?.getComponent(PlayerTs);
+            if (playerTs) {
+                playerTs.addExp(0, true);
+            }
+        }
+    }
+
+    private onBossKilledDrop(deathPos: Vec3) {
+        if (this.certBadgeDropFromBoss && !this.certBadgeCollected) {
+            this.certBadgeCollected = true;
+            director.getScene().emit(
+                OnOrEmitConst.OnDropCollected,
+                'certBadge',
+                '认证徽章',
+            );
+        }
     }
 }

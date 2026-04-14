@@ -148,6 +148,10 @@ export class UIGame extends Component {
         scene?.on(OnOrEmitConst.OnActiveSkillReady, this.onActiveSkillReady, this);
         scene?.on(OnOrEmitConst.OnActiveSkillUnlocked, this.onActiveSkillUnlocked, this);
         scene?.on(OnOrEmitConst.OnTechDebtAuraStack, this.onTechDebtAuraStack, this);
+        scene?.on(OnOrEmitConst.OnSpecialWave, this.onSpecialWave, this);
+        scene?.on(OnOrEmitConst.OnShieldEnemyBlock, this.onShieldEnemyBlock, this);
+        scene?.on(OnOrEmitConst.OnChargeEnemyImpact, this.onChargeEnemyImpact, this);
+        scene?.on(OnOrEmitConst.OnSelfDestructExplode, this.onSelfDestructExplode, this);
 
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
@@ -182,6 +186,10 @@ export class UIGame extends Component {
         this.safeNodeOff(scene, OnOrEmitConst.OnActiveSkillReady, this.onActiveSkillReady);
         this.safeNodeOff(scene, OnOrEmitConst.OnActiveSkillUnlocked, this.onActiveSkillUnlocked);
         this.safeNodeOff(scene, OnOrEmitConst.OnTechDebtAuraStack, this.onTechDebtAuraStack);
+        this.safeNodeOff(scene, OnOrEmitConst.OnSpecialWave, this.onSpecialWave);
+        this.safeNodeOff(scene, OnOrEmitConst.OnShieldEnemyBlock, this.onShieldEnemyBlock);
+        this.safeNodeOff(scene, OnOrEmitConst.OnChargeEnemyImpact, this.onChargeEnemyImpact);
+        this.safeNodeOff(scene, OnOrEmitConst.OnSelfDestructExplode, this.onSelfDestructExplode);
 
         input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         input.off(Input.EventType.KEY_UP, this.onKeyUp, this);
@@ -1551,6 +1559,22 @@ export class UIGame extends Component {
         }
     }
 
+    private onSpecialWave(_type: string, name: string, count: number, _elapsed: number) {
+        this.showRuntimeNotify(`⚠ 特殊波次：${name} x${count} 来袭！`, 3);
+    }
+
+    private onShieldEnemyBlock(_pos: any) {
+        this.showRuntimeNotify('护盾格挡！绕到背后攻击', 1.2);
+    }
+
+    private onChargeEnemyImpact(_pos: any) {
+        this.showRuntimeNotify('冲锋命中！注意走位闪避', 1.5);
+    }
+
+    private onSelfDestructExplode(_pos: any) {
+        this.showRuntimeNotify('自爆！远离爆炸范围', 1.5);
+    }
+
     private safeNodeOff(target: Node, eventName: string, handler: (...args: any[]) => void) {
         if (!target) {
             return;
@@ -1681,10 +1705,18 @@ export class UIGame extends Component {
                 totalKills,
                 player?.getCareerRoleId() ?? 'student',
             );
+            // 认证徽章加成：本局击杀 Boss 后拾取认证徽章，认证点 x2
+            const levelCtrl = this.getLevelController();
+            if (levelCtrl?.certBadgeCollected) {
+                this.settlementRewardValue *= 2;
+                this.metaProgress.certificationPoint += this.settlementRewardValue / 2;
+                this.saveMetaProgress();
+            }
             this.settlementRewardApplied = true;
             this.refreshStartPanelContent();
         }
         const certPointReward = this.settlementRewardValue;
+        const badgeText = this.getLevelController()?.certBadgeCollected ? ' (认证徽章 x2)' : '';
 
         // 设置标题
         this.settlementTitleLabel.string = '战斗结算';
@@ -1708,7 +1740,7 @@ export class UIGame extends Component {
             `剩余技能点：${skillPoint}\n` +
             `\n` +
             `综合评分：${rating.score} 分\n` +
-            `认证点奖励：+${certPointReward}\n` +
+            `认证点奖励：+${certPointReward}${badgeText}\n` +
             `累计认证点：${this.metaProgress.certificationPoint}\n` +
             `累计对局：${this.metaProgress.totalRuns}\n` +
             `历史最佳：${this.metaProgress.bestGrade}（${this.metaProgress.bestScore} 分）\n` +

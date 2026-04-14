@@ -1,4 +1,4 @@
-import { _decorator, Animation, CCFloat, CCInteger, Collider, Component, ICollisionEvent, Material, MeshRenderer, Node, PhysicsSystem, RigidBody, SkeletalAnimation, SkeletalAnimationState, Vec3, v3 } from 'cc';
+import { _decorator, Animation, CCFloat, CCInteger, Collider, Component, director, ICollisionEvent, Material, MeshRenderer, Node, PhysicsSystem, RigidBody, SkeletalAnimation, SkeletalAnimationState, Vec3, v3 } from 'cc';
 import { ActorState } from '../const/ActorState';
 import { ColliderGroup } from '../const/ColliderGroup';
 import { OnOrEmitConst } from '../const/OnOrEmitConst';
@@ -56,6 +56,12 @@ export class Monster extends Component {
     codeReviewExpMultiplier = 1;
     isTechDebt = false;
     isReqChange = false;
+    isShieldEnemy = false;
+    isChargeEnemy = false;
+    isSelfDestruct = false;
+    isProjectileEnemy = false;
+    /** 护盾怪正面护盾半角（弧度） */
+    shieldHalfAngleRad = Math.PI / 3; // 120度的一半=60度
 
     private readonly restoreMaterialState = () => {
         for (let i = 0; i < this.messhNodes.length; i++) {
@@ -90,6 +96,14 @@ export class Monster extends Component {
         this.rigidityTime = 0;
         this.distance = 9999;
         this.input.set(0, 0, 0);
+        this.isTechDebt = false;
+        this.isReqChange = false;
+        this.isShieldEnemy = false;
+        this.isChargeEnemy = false;
+        this.isSelfDestruct = false;
+        this.isProjectileEnemy = false;
+        this.isCodeReviewMarked = false;
+        this.codeReviewExpMultiplier = 1;
 
         this.rungameInfo.moveSpeed = 3 * resolvedMoveSpeedMultiplier;
         this.rungameInfo.Hp = 30 * (1 + resolvedBaseHp) * resolvedHpMultiplier;
@@ -278,6 +292,22 @@ export class Monster extends Component {
         }
         if (!Number.isFinite(this.rungameInfo.defense) || this.rungameInfo.defense < 0) {
             this.rungameInfo.defense = 0;
+        }
+
+        // 护盾怪正面格挡：攻击来自正面 120 度角内时伤害减少 90%
+        if (this.isShieldEnemy && hurtDiretion) {
+            const forward = this.node.forward;
+            // hurtDiretion 是从攻击点指向怪物的方向，取反得到攻击来源方向
+            const attackFromDir = v3(-hurtDiretion.x, 0, -hurtDiretion.z);
+            attackFromDir.normalize();
+            const forwardFlat = v3(forward.x, 0, forward.z);
+            forwardFlat.normalize();
+            const dot = Vec3.dot(forwardFlat, attackFromDir);
+            // dot > cos(halfAngle) 表示攻击来自正面
+            if (dot > Math.cos(this.shieldHalfAngleRad)) {
+                damage = Math.max(1, Math.floor(damage * 0.1));
+                director.getScene()?.emit(OnOrEmitConst.OnShieldEnemyBlock, this.node.worldPosition);
+            }
         }
 
         if (this.rungameInfo.defense > damage) {

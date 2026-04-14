@@ -927,7 +927,7 @@ export class PlayerTs extends Component {
         return `兜底扩容（生命上限 +${this.eliteLootMaxHp}，回复 ${this.eliteLootMaxHp}）`;
     }
 
-    private addExp(expReward: number){
+    addExp(expReward: number, forceUpgrade: boolean = false){
         const property = this.actor.rungameInfo;
         if (!Number.isFinite(property.exp) || property.exp < 0){
             property.exp = 0;
@@ -951,7 +951,13 @@ export class PlayerTs extends Component {
             property.skillPoint = 0;
         }
 
-        property.exp += Math.max(1, Math.floor(expReward));
+        property.exp += Math.max(forceUpgrade ? 0 : 1, Math.floor(expReward));
+        // forceUpgrade: 代码片段掉落时强制触发一次升级选择
+        if (forceUpgrade && property.exp < property.maxExp) {
+            this.node.emit(OnOrEmitConst.OnplayerUpgrade, property.level, this, 0, property.skillPoint);
+            this.node.emit(OnOrEmitConst.OnExpGain, property.exp, property.maxExp, this);
+            return;
+        }
         while (property.exp >= property.maxExp){
             property.exp -= property.maxExp;
             property.level = property.level + 1;
